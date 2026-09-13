@@ -100,7 +100,6 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
             _localSeenOrderIds.add(key);
           }
 
-          // अब वेंडर डैशबोर्ड में सभी ऑर्डर्स दिखेंगे ताकि स्टेटस ट्रैक हो सके
           loadedOrders.add(ord);
         }
       });
@@ -418,7 +417,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-    // 🟢 वेंडर डैशबोर्ड (आइटम फोटो, नाम, क्वांटिटी और पूरे स्टेटस के साथ)
+    // 🟢 वेंडर डैशबोर्ड (आइटम फोटो, नाम, क्वांटिटी और पूरे बिल के साथ)
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -463,7 +462,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('🚀 लाइव ऑर्डर्स (Item Photos & Full Status)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Text('🚀 लाइव ऑर्डर्स (Itemized Bill)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(12)),
@@ -545,12 +544,12 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                               const Text('🛒 आर्डर किए गए आइटम्स (फोटो सहित):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                               const SizedBox(height: 4),
                               
-                              // 📸 आइटम लिस्ट, फोटो और क्वांटिटी
+                              // 📸 आइटम लिस्ट, फोटो और क्वांटिटी दिखाने वाला हिस्सा
                               ...items.map((it) {
                                 var m = it is Map ? it : {};
-                                String itemName = m['name'] ?? m['title'] ?? 'Item';
+                                String itemName = m['name'] ?? m['title'] ?? m['itemName'] ?? 'Item';
                                 var qty = m['qty'] ?? m['quantity'] ?? 1;
-                                double price = (m['price'] ?? 0.0).toDouble();
+                                double price = (m['price'] ?? m['unitPrice'] ?? 0.0).toDouble();
                                 String? imgUrl = m['imageUrl'] ?? m['image'] ?? m['img'];
 
                                 return Container(
@@ -572,7 +571,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                                 width: 35,
                                                 height: 35,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 25, color: Colors.grey),
+                                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 22, color: Colors.grey),
                                               )
                                             : Container(
                                                 width: 35,
