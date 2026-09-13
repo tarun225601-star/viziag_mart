@@ -200,7 +200,7 @@ class VendorAuthAndPortalView extends StatefulWidget {
 }
 
 class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
-  int _viewMode = 0; // 0: Main, 1: Register, 2: Login, 3: Vendor Portal, 4: Admin Code, 5: Admin Panel
+  int _viewMode = 0; // 0: Main Hub, 1: Register, 2: Login, 3: Vendor Portal, 4: Admin Code, 5: Admin Panel
 
   final regShopNameCtrl = TextEditingController();
   final regPhoneCtrl = TextEditingController();
@@ -221,7 +221,6 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
   bool isLoadingRequests = false;
   bool isLoadingProducts = false;
 
-  // Controllers for adding items/fruits in vendor dashboard
   final itemNameCtrl = TextEditingController();
   final itemPriceCtrl = TextEditingController();
   final itemQtyCtrl = TextEditingController();
@@ -321,7 +320,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
 
   Future<void> _addNewProduct() async {
     if (itemNameCtrl.text.isEmpty || itemPriceCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया आइटम/एप्पल का नाम और कीमत भरें!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया आइटम का नाम और कीमत भरें!'), backgroundColor: Colors.red));
       return;
     }
 
@@ -344,7 +343,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       setState(() => selectedItemImage = '');
       _fetchVendorProducts();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ नया फ्रूट/आइटम सफलतापूर्वक जोड़ दिया गया!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ नया आइटम सफलतापूर्वक जोड़ दिया गया!'), backgroundColor: Colors.green));
       }
     } catch (e) {
       if (mounted) {
@@ -443,7 +442,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
         _fetchVendorOrders();
         _fetchVendorProducts();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ स्वागत है! वेंडर डैशबोर्ड सफलतापूर्वक खुल गया है।'), backgroundColor: Colors.green));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ स्वागत है! वेंडर डैशबोर्ड खुल गया है।'), backgroundColor: Colors.green));
         }
       } else {
         if (mounted) {
@@ -470,7 +469,24 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       _fetchPendingRequests();
       adminCodeCtrl.clear();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ गलत गुप्त कोड दर्ज किया गया है!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ गलत गुप्त कोड!'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _approveVendorRequest(String reqKey) async {
+    try {
+      await http.patch(
+        Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_requests/$reqKey.json'),
+        body: json.encode({'status': 'approved'}),
+      );
+      _fetchPendingRequests();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ वेंडर सफलतापूर्वक अप्रूव कर दिया गया!'), backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ एरर: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -530,13 +546,13 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
         child: ListView(
           children: [
             const SizedBox(height: 10),
-            const Center(child: Text('📝 नया वेंडर रजिस्ट्रेशन फॉर्म', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+            const Center(child: Text('📝 नया वेंडर रजिस्ट्रेशन', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
             const SizedBox(height: 20),
             TextField(controller: regShopNameCtrl, decoration: const InputDecoration(labelText: 'दुकान का नाम (Shop Name)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.store))),
             const SizedBox(height: 15),
             TextField(controller: regPhoneCtrl, keyboardType: TextInputType.phone, maxLength: 10, decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder(), counterText: '', prefixIcon: Icon(Icons.phone))),
             const SizedBox(height: 15),
-            TextField(controller: regAddressCtrl, decoration: const InputDecoration(labelText: 'दुकान का पूरा पता / लोकेशन', border: OutlineInputBorder(), prefixIcon: Icon(Icons.location_on))),
+            TextField(controller: regAddressCtrl, decoration: const InputDecoration(labelText: 'दुकान का पता / लोकेशन', border: OutlineInputBorder(), prefixIcon: Icon(Icons.location_on))),
             const SizedBox(height: 15),
             TextField(controller: regPass1Ctrl, obscureText: true, decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', border: OutlineInputBorder(), prefixIcon: Icon(Icons.lock_outline))),
             const SizedBox(height: 15),
@@ -566,7 +582,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
           children: [
             const Icon(Icons.lock_open, size: 65, color: Colors.green),
             const SizedBox(height: 15),
-            const Text('🔐 वेंडर लॉगिन पोर्टल', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text('🔐 वेंडर लॉगिन', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 5),
             const Text('पहले एडमिन से अप्रूव कराना अनिवार्य है', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 25),
@@ -597,13 +613,13 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
           children: [
             Container(
               color: Colors.green.shade50,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Row(
                 children: [
-                  const Text('🟢 वेंडर डैशबोर्ड (लाइव)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                  const Text('🟢 वेंडर डैशबोर्ड (लाइव)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.refresh, size: 18, color: Colors.green),
+                    icon: const Icon(Icons.refresh, size: 16, color: Colors.green),
                     onPressed: () {
                       _fetchVendorOrders();
                       _fetchVendorProducts();
@@ -611,7 +627,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                   ),
                   TextButton(
                     onPressed: () => setState(() => _viewMode = 0),
-                    child: const Text('लॉग आउट', style: TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold)),
+                    child: const Text('लॉग आउट', style: TextStyle(fontSize: 11, color: Colors.red)),
                   ),
                 ],
               ),
@@ -624,14 +640,14 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                 indicatorColor: Colors.green,
                 tabs: [
                   Tab(icon: Icon(Icons.list_alt), text: 'कस्टमर ऑर्डर्स'),
-                  Tab(icon: Icon(Icons.inventory), text: 'मेरी दुकानें/आइटम्स'),
+                  Tab(icon: Icon(Icons.inventory), text: 'दुकान के आइटम्स'),
                 ],
               ),
             ),
             Expanded(
               child: TabBarView(
                 children: [
-                  // Tab 1: Orders List
+                  // Tab 1: Customer Orders (Full Time, Date, Photos & Items View)
                   isLoadingOrders
                       ? const Center(child: CircularProgressIndicator(color: Colors.green))
                       : allVendorOrders.isEmpty
@@ -646,8 +662,11 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                 String phone = ord['customerPhone'] ?? ord['phone'] ?? '';
                                 String deliveryAddress = ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं';
                                 String status = ord['orderStatus'] ?? ord['status'] ?? 'Pending ⏳';
-                                var items = ord['items'] ?? ord['cartItems'] ?? [];
-                                if (items is! List) items = [];
+                                
+                                String orderTime = ord['orderTime'] ?? ord['timestamp'] ?? ord['date'] ?? 'समय उपलब्ध नहीं';
+                                
+                                var rawItems = ord['items'] ?? ord['cartItems'] ?? [];
+                                List<dynamic> orderItems = rawItems is List ? rawItems : [];
                                 double totalAmount = (ord['totalAmount'] ?? 0.0).toDouble();
 
                                 return Card(
@@ -666,11 +685,72 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                           ],
                                         ),
                                         const SizedBox(height: 6),
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.access_time, size: 12, color: Colors.grey),
+                                            const SizedBox(width: 4),
+                                            Text('आर्डर का समय/तारीख: $orderTime', style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w600)),
+                                          ],
+                                        ),
+                                        const Divider(height: 10),
                                         Text('ग्राहक: $customerName ($phone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                         const SizedBox(height: 4),
                                         Text('पता: $deliveryAddress', style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                                        const Divider(height: 12),
-                                        Text('कुल राशि: ₹$totalAmount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange.shade800)),
+                                        const Divider(height: 14),
+                                        
+                                        const Text('कस्टमर द्वारा आर्डर किए गए आइटम्स:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        const SizedBox(height: 6),
+                                        orderItems.isEmpty
+                                            ? const Text('कोई आइटम डेटा नहीं', style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic))
+                                            : ListView.builder(
+                                                shrinkWrap: true,
+                                                physics: const NeverScrollableScrollPhysics(),
+                                                itemCount: orderItems.length,
+                                                itemBuilder: (context, itemIndex) {
+                                                  var item = orderItems[itemIndex];
+                                                  String itemName = item['name'] ?? item['title'] ?? 'Product';
+                                                  var itemPrice = item['price'] ?? 0;
+                                                  var itemQty = item['qty'] ?? item['quantity'] ?? 1;
+                                                  String itemImg = item['image'] ?? item['img'] ?? '';
+
+                                                  return Padding(
+                                                    padding: const EdgeInsets.only(bottom: 8),
+                                                    child: Row(
+                                                      children: [
+                                                        ClipRRect(
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          child: itemImg.isNotEmpty
+                                                              ? Image.network(itemImg, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag, size: 20))
+                                                              : Container(
+                                                                  width: 40,
+                                                                  height: 40,
+                                                                  color: Colors.grey.shade200,
+                                                                  child: const Icon(Icons.shopping_bag, size: 20, color: Colors.grey),
+                                                                ),
+                                                        ),
+                                                        const SizedBox(width: 10),
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                                            children: [
+                                                              Text(itemName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                              Text('मात्रा (Qty): $itemQty  |  मूल्य: ₹$itemPrice', style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                        const Divider(height: 14),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text('कुल राशि (Total):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                            Text('₹$totalAmount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green.shade700)),
+                                          ],
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -678,19 +758,19 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                               },
                             ),
 
-                  // Tab 2: Shop & Item/Product Management (Apple and other items management logic)
+                  // Tab 2: Vendor Shop Products Management
                   SingleChildScrollView(
                     padding: const EdgeInsets.all(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('➕ नया फ्रूट/आइटम जोड़ें (जैसे: Kashmiri Apple)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.green)),
+                        const Text('➕ नया फ्रूट/आइटम जोड़ें (जैसे: Kashmiri Apple)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green)),
                         const SizedBox(height: 10),
                         TextField(controller: itemNameCtrl, decoration: const InputDecoration(labelText: 'आइटम का नाम (Name)', border: OutlineInputBorder(), isDense: true)),
                         const SizedBox(height: 10),
                         Row(
                           children: [
-                            Expanded(child: TextField(controller: itemPriceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'कीमत प्रति यूनिट (₹ Price)', border: OutlineInputBorder(), isDense: true))),
+                            Expanded(child: TextField(controller: itemPriceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'कीमत प्रति यूनिट (₹)', border: OutlineInputBorder(), isDense: true))),
                             const SizedBox(width: 10),
                             Expanded(child: TextField(controller: itemQtyCtrl, decoration: const InputDecoration(labelText: 'मात्रा (जैसे: 1 kg)', border: OutlineInputBorder(), isDense: true))),
                           ],
@@ -790,7 +870,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
             const SizedBox(height: 5),
             const Text('केवल तरुण (मास्टर एडमिन) के लिए सुरक्षित', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 25),
-            TextField(controller: adminCodeCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'गुप्त कोड दर्ज करें (Secret Passcode)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.key))),
+            TextField(controller: adminCodeCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'गुप्त कोड दर्ज करें (tarun#1)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.key))),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -808,7 +888,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-    // ViewMode 5: Master Admin Panel
+    // ViewMode 5: Master Admin Panel for Approving Shops
     return Column(
       children: [
         Container(
@@ -863,6 +943,17 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                 const SizedBox(height: 4),
                                 Text('📞 फोन: $phone', style: const TextStyle(fontSize: 12)),
                                 Text('📍 पता: $address', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                const Divider(height: 12),
+                                if (status != 'approved')
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(100, 32)),
+                                      onPressed: () => _approveVendorRequest(reqKey),
+                                      icon: const Icon(Icons.check, size: 14),
+                                      label: const Text('अप्रूव करें', style: TextStyle(fontSize: 11)),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
