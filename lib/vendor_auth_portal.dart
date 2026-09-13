@@ -150,7 +150,6 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
 
       Duration diff = DateTime.now().difference(orderTime);
       
-      // तारीख और समय का फॉर्मेट
       String dateStr = "${orderTime.day}/${orderTime.month}/${orderTime.year}";
       String timeStr = "${orderTime.hour > 12 ? orderTime.hour - 12 : (orderTime.hour == 0 ? 12 : orderTime.hour)}:${orderTime.minute.toString().padLeft(2, '0')} ${orderTime.hour >= 12 ? 'PM' : 'AM'}";
 
@@ -505,9 +504,9 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.flash_on, size: 50, color: Colors.amber),
+                        Icon(Icons.receipt_long_outlined, size: 50, color: Colors.grey),
                         SizedBox(height: 8),
-                        Text('ऑर्डर का इंतज़ार है... (तुरंत प्रकट होगा)', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                        Text('अभी कोई नया आर्डर नहीं आया है!', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   )
@@ -516,139 +515,138 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                     itemBuilder: (context, index) {
                       var ord = _vendorOrders[index];
                       String orderId = ord['orderId'] ?? '';
-                      String customerName = ord['customerName'] ?? 'Customer';
-                      String phone = ord['customerPhone'] ?? '';
-                      String address = ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता नहीं';
-                      String status = ord['orderStatus'] ?? ord['status'] ?? 'Pending ⏳';
-                      var items = ord['items'] as List<dynamic>? ?? [];
-                      double total = (ord['grandTotal'] ?? ord['totalAmount'] ?? 0.0).toDouble();
+                      String customerName = ord['customerName'] ?? ord['name'] ?? 'ग्राहक';
+                      String customerPhone = ord['phone'] ?? ord['customerPhone'] ?? '';
+                      String deliveryAddress = ord['address'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं';
+                      String status = ord['status'] ?? ord['orderStatus'] ?? 'Pending';
+                      
+                      // 🛒 आइटम्स को सेफली मैप या लिस्ट से निकालना
+                      var rawItems = ord['items'] ?? ord['cartItems'] ?? ord['cart'] ?? [];
+                      List<dynamic> itemsList = [];
+                      if (rawItems is List) {
+                        itemsList = rawItems;
+                      } else if (rawItems is Map) {
+                        itemsList = rawItems.values.toList();
+                      }
 
-                      // 🕒 ऑर्डर का टाइम और डेट
-                      var rawTime = ord['orderTime'] ?? ord['timestamp'] ?? ord['createdAt'];
-                      String timeInfo = _getOrderTimeInfo(rawTime);
+                      // 💰 कुल राशि
+                      var totalAmount = ord['totalAmount'] ?? ord['total'] ?? ord['amount'] ?? 0;
+
+                      // ⏰ टाइमर और डेट की जानकारी
+                      var timeInfo = _getOrderTimeInfo(ord['orderTime'] ?? ord['timestamp'] ?? ord['createdAt']);
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        elevation: 3,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         child: Padding(
                           padding: const EdgeInsets.all(12.0),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // 📅 टाइमर और स्टेटस हेडर
                               Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('📦 Order ID: #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green.shade800)),
-                                  const Spacer(),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                                    onPressed: () => _deleteOrder(orderId),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
+                                  Expanded(child: Text(timeInfo, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold))),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: status == 'Pending' ? Colors.orange.shade100 : Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: status == 'Pending' ? Colors.orange.shade800 : Colors.green.shade800)),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
+                              const Divider(height: 10),
 
-                              // 📅 टाइमर और डेट का बॉक्स
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.shade50,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.amber.shade200),
-                                ),
-                                child: Text(
-                                  timeInfo,
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800),
-                                ),
+                              // 👤 ग्राहक की जानकारी
+                              Row(
+                                children: [
+                                  const Icon(Icons.person, size: 14, color: Colors.green),
+                                  const SizedBox(width: 4),
+                                  Text(customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  const SizedBox(width: 8),
+                                  if (customerPhone.isNotEmpty)
+                                    Text('($customerPhone)', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on, size: 14, color: Colors.redAccent),
+                                  const SizedBox(width: 4),
+                                  Expanded(child: Text('पता: $deliveryAddress', style: const TextStyle(fontSize: 11, color: Colors.black87))),
+                                ],
                               ),
                               const SizedBox(height: 8),
 
-                              Text('👤 ग्राहक: $customerName ($phone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                              Text('📍 पता: $address', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                              const Divider(height: 12),
-
-                              // 🛒 आइटम्स, फोटो और क्वांटिटी (वेंडर के पैक करने के लिए)
-                              const Text('🛒 आर्डर किए गए आइटम्स (पैक करें):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                              // 📦 आर्डर किए गए आइटम्स की लिस्ट (नाम, इमेज और क्वांटिटी के साथ)
+                              const Text('आइटम्स:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.green)),
                               const SizedBox(height: 4),
+                              ...itemsList.map((item) {
+                                String itemName = item['name'] ?? item['title'] ?? item['productName'] ?? 'Product';
+                                var qty = item['qty'] ?? item['quantity'] ?? 1;
+                                var price = item['price'] ?? item['rate'] ?? 0;
+                                String? imgUrl = item['imageUrl'] ?? item['image'] ?? item['img'] ?? item['photoUrl'];
 
-                              ...items.map((it) {
-                                var m = it is Map ? it : {};
-                                String itemName = m['name'] ?? m['title'] ?? 'Product';
-                                var qty = m['qty'] ?? m['quantity'] ?? 1;
-                                double price = (m['price'] ?? 0.0).toDouble();
-                                String? imgUrl = m['imageUrl'] ?? m['image'] ?? m['img'];
-
-                                return Container(
-                                  margin: const EdgeInsets.symmetric(vertical: 4),
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 3),
                                   child: Row(
                                     children: [
-                                      // 📸 आइटम की फोटो
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(6),
-                                        child: imgUrl != null && imgUrl.isNotEmpty
-                                            ? Image.network(
-                                                imgUrl,
-                                                width: 40,
-                                                height: 40,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 30, color: Colors.grey),
-                                              )
-                                            : Container(
-                                                width: 40,
-                                                height: 40,
-                                                color: Colors.green.shade100,
-                                                child: const Icon(Icons.shopping_bag, size: 20, color: Colors.green),
-                                              ),
-                                      ),
-                                      const SizedBox(width: 10),
+                                      // 🖼️ आइटम की फोटो
+                                      if (imgUrl != null && imgUrl.isNotEmpty)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Image.network(imgUrl, width: 35, height: 35, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 30, color: Colors.grey)),
+                                        )
+                                      else
+                                        Container(
+                                          width: 35,
+                                          height: 35,
+                                          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                                          child: const Icon(Icons.fastfood, size: 20, color: Colors.grey),
+                                        ),
+                                      const SizedBox(width: 8),
+                                      // आइटम का नाम और मात्रा
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(itemName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                            Text('मात्रा (Qty): $qty', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                            Text('मात्रा: $qty  |  मूल्य: ₹$price', style: const TextStyle(fontSize: 10, color: Colors.grey)),
                                           ],
                                         ),
                                       ),
-                                      Text('₹${(price * qty).toInt()}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
                                     ],
                                   ),
                                 );
                               }),
 
                               const Divider(height: 12),
+
+                              // 💵 कुल राशि और एक्शन बटन (डिलीट / स्टेटस चेंज)
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('कुल राशि: ₹${total.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                  Text('स्टेटस: $status', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.orange)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-
-                              // एक्शन बटन (ऑर्डर स्वीकार या डिलीवर करने के लिए)
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  ElevatedButton(
-                                    onPressed: () => _updateOrderStatus(orderId, 'Accepted ✅'),
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, minimumSize: const Size(80, 30)),
-                                    child: const Text('स्वीकार करें', style: TextStyle(fontSize: 11)),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: () => _updateOrderStatus(orderId, 'Delivered 🎉'),
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(80, 30)),
-                                    child: const Text('डिलीवर', style: TextStyle(fontSize: 11)),
+                                  Text('कुल राशि: ₹$totalAmount', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.green)),
+                                  Row(
+                                    children: [
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
+                                        onPressed: () => _updateOrderStatus(orderId, 'Accepted'),
+                                        child: const Text('स्वीकार करें', style: TextStyle(fontSize: 10)),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                        onPressed: () => _deleteOrder(orderId),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        tooltip: 'डिलीट करें',
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
