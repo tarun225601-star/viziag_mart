@@ -5,7 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ImagePickerHelper {
-  // 🚀 गैलरी से इमेज पिक करके Base64 में बदलने का मेथड (वही नाम जो main.dart में चाहिए)
+  // 🚀 वह मेथड जिसकी main.dart को तलाश है
+  static Future<String?> pickAndUploadImage(BuildContext context) async {
+    return await pickAndConvertToBase64();
+  }
+
+  // 🚀 गैलरी से इमेज पिक करके Base64 में बदलने का मेथड
   static Future<String?> pickAndConvertToBase64() async {
     try {
       final ImagePicker picker = ImagePicker();
