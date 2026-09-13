@@ -19,7 +19,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   bool _isRegistering = false;
   bool _isLoading = false;
   
-  // Controllers
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -66,7 +65,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     super.dispose();
   }
 
-  // 🚀 सुपर स्मार्ट लोकल-कैश पोलिंग: सिर्फ नई आईडी चेक करेगा, पुराना डेटा जीरो डाउनलोड!
   void _startSmartOrderChecker() {
     _fetchAllActiveOrdersRest(isInitial: true);
     
@@ -117,8 +115,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
           if (value is Map) {
             var order = Map<String, dynamic>.from(value);
             order['orderId'] = key;
-            
-            // लोकल मेमोरी में आईडी सेव करें ताकि दोबारा डाउनलोड या डिस्टर्ब न हो
             _localSeenOrderIds.add(key);
 
             String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
@@ -334,9 +330,9 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       } else if (diff.inMinutes < 60) {
         return '${diff.inMinutes} मिनट पहले';
       } else if (diff.inHours < 24) {
-        return '${diff.inHours} घंटे ${diff.inMinutes % 60} मिनट पहले';
+        return '${diff.inHours} घंटे पहले';
       } else {
-        return '${orderTime.day}/${orderTime.month}/${orderTime.year} ${orderTime.hour.toString().padLeft(2, '0')}:${orderTime.minute.toString().padLeft(2, '0')}';
+        return '${orderTime.day}/${orderTime.month}/${orderTime.year}';
       }
     } catch (e) {
       return timeStr;
@@ -437,7 +433,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: const Text('🚴‍♂️ राइडर डिलीवरी (Local Cached Auto-Sync)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
+        title: const Text('🚴‍♂️ राइडर डिलीवरी (Pickup & Bill Info)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 12)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.green),
@@ -475,6 +471,9 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                 String orderId = order['orderId'] ?? '';
                 String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
                 String phone = order['customerPhone'] ?? order['phone'] ?? '';
+                
+                // 📍 पिकअप और डिलीवरी एड्रेस
+                String shopAddress = order['shopAddress'] ?? 'Sector 89A Ajronda Sabji Mandi Faridabad';
                 String deliveryAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
                 
                 String status = order['orderStatus'] ?? order['status'] ?? 'Pending ⏳';
@@ -528,9 +527,29 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text('पता: $deliveryAddress', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        const SizedBox(height: 8),
+                        
+                        // 🏪 पिकअप और डिलीवरी एड्रेस बॉक्स
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('🏪 पिकअप (दुकान): $shopAddress', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                              const SizedBox(height: 4),
+                              Text('📍 डिलीवरी (ग्राहक): $deliveryAddress', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+                            ],
+                          ),
+                        ),
+
                         const Divider(height: 16),
+                        const Text('🛒 आर्डर का पूरा ब्योरा (Item List):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                        const SizedBox(height: 4),
                         ...items.map((it) {
                           var m = it is Map ? it : {};
                           return Padding(
@@ -538,7 +557,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('• ${m['name'] ?? 'Item'} (x${m['qty'] ?? 1})', style: const TextStyle(fontSize: 11)),
+                                Text('• ${m['name'] ?? 'Item'} (Qty: ${m['qty'] ?? 1})', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
                                 Text('₹${m['price'] ?? 0}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                               ],
                             ),
@@ -548,7 +567,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('कुल राशि: ₹${totalAmount.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            Text('कुल राशि: ₹${totalAmount.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
                             Row(
                               children: [
                                 if (!isAccepted)
