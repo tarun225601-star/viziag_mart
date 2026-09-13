@@ -100,10 +100,8 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
             _localSeenOrderIds.add(key);
           }
 
-          String status = ord['orderStatus'] ?? ord['status'] ?? 'Pending';
-          if (!status.toLowerCase().contains('delivered')) {
-            loadedOrders.add(ord);
-          }
+          // अब वेंडर डैशबोर्ड में सभी ऑर्डर्स दिखेंगे ताकि स्टेटस ट्रैक हो सके
+          loadedOrders.add(ord);
         }
       });
 
@@ -420,7 +418,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-    // 🟢 वेंडर डैशबोर्ड (पूरी आइटम लिस्ट के साथ)
+    // 🟢 वेंडर डैशबोर्ड (आइटम फोटो, नाम, क्वांटिटी और पूरे स्टेटस के साथ)
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -465,7 +463,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('🚀 लाइव ऑर्डर्स (Item List Included)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const Text('🚀 लाइव ऑर्डर्स (Item Photos & Full Status)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(12)),
@@ -537,28 +535,68 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                       color: isAccepted ? Colors.blue.shade100 : Colors.orange.shade100,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
-                                    child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isAccepted ? Colors.blue.shade800 : Colors.orange.shade800)),
+                                    child: Text('स्टेटस: $status', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isAccepted ? Colors.blue.shade800 : Colors.orange.shade800)),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 3),
                               Text('पता: $address', style: const TextStyle(fontSize: 10, color: Colors.grey)),
                               const Divider(height: 12),
-                              const Text('🛒 आर्डर किए गए आइटम्स:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                              const Text('🛒 आर्डर किए गए आइटम्स (फोटो सहित):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                               const SizedBox(height: 4),
+                              
+                              // 📸 आइटम लिस्ट, फोटो और क्वांटिटी
                               ...items.map((it) {
                                 var m = it is Map ? it : {};
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                String itemName = m['name'] ?? m['title'] ?? 'Item';
+                                var qty = m['qty'] ?? m['quantity'] ?? 1;
+                                double price = (m['price'] ?? 0.0).toDouble();
+                                String? imgUrl = m['imageUrl'] ?? m['image'] ?? m['img'];
+
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(vertical: 3),
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.grey.shade200),
+                                  ),
                                   child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('• ${m['name'] ?? 'Item'} (Qty: ${m['qty'] ?? 1})', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                      Text('₹${m['price'] ?? 0}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      // 🖼️ आइटम की छोटी फोटो (Thumbnail)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: imgUrl != null && imgUrl.isNotEmpty
+                                            ? Image.network(
+                                                imgUrl,
+                                                width: 35,
+                                                height: 35,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 25, color: Colors.grey),
+                                              )
+                                            : Container(
+                                                width: 35,
+                                                height: 35,
+                                                color: Colors.green.shade100,
+                                                child: const Icon(Icons.shopping_bag, size: 18, color: Colors.green),
+                                              ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(itemName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                            Text('मात्रा (Qty): $qty', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                          ],
+                                        ),
+                                      ),
+                                      Text('₹${(price * qty).toInt()}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
                                     ],
                                   ),
                                 );
                               }),
+
                               const Divider(height: 12),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
