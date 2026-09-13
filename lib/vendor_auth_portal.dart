@@ -506,7 +506,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                       children: [
                         Icon(Icons.receipt_long_outlined, size: 50, color: Colors.grey),
                         SizedBox(height: 8),
-                        Text('अभी कोई नया आर्डर नहीं आया है!', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                        Text('कोई आर्डर नहीं मिला', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   )
@@ -515,25 +515,13 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                     itemBuilder: (context, index) {
                       var ord = _vendorOrders[index];
                       String orderId = ord['orderId'] ?? '';
-                      String customerName = ord['customerName'] ?? ord['name'] ?? 'ग्राहक';
-                      String customerPhone = ord['phone'] ?? ord['customerPhone'] ?? '';
-                      String deliveryAddress = ord['address'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं';
+                      String custName = ord['customerName'] ?? ord['name'] ?? 'ग्राहक';
+                      String custPhone = ord['customerPhone'] ?? ord['phone'] ?? '';
+                      String custAddress = ord['customerAddress'] ?? ord['deliveryAddress'] ?? ord['address'] ?? 'पता उपलब्ध नहीं';
+                      dynamic grandTotal = ord['grandTotal'] ?? ord['totalAmount'] ?? 0;
                       String status = ord['status'] ?? ord['orderStatus'] ?? 'Pending';
-                      
-                      // 🛒 आइटम्स को सेफली मैप या लिस्ट से निकालना
-                      var rawItems = ord['items'] ?? ord['cartItems'] ?? ord['cart'] ?? [];
-                      List<dynamic> itemsList = [];
-                      if (rawItems is List) {
-                        itemsList = rawItems;
-                      } else if (rawItems is Map) {
-                        itemsList = rawItems.values.toList();
-                      }
-
-                      // 💰 कुल राशि
-                      var totalAmount = ord['totalAmount'] ?? ord['total'] ?? ord['amount'] ?? 0;
-
-                      // ⏰ टाइमर और डेट की जानकारी
-                      var timeInfo = _getOrderTimeInfo(ord['orderTime'] ?? ord['timestamp'] ?? ord['createdAt']);
+                      dynamic timestamp = ord['timestamp'];
+                      List itemsList = ord['items'] ?? [];
 
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 6),
@@ -544,110 +532,85 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // 📅 टाइमर और स्टेटस हेडर
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Expanded(child: Text(timeInfo, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold))),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: status == 'Pending' ? Colors.orange.shade100 : Colors.green.shade100,
-                                      borderRadius: BorderRadius.circular(8),
+                                  Expanded(
+                                    child: Text(
+                                      'ग्राहक: $custName',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green),
                                     ),
-                                    child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: status == 'Pending' ? Colors.orange.shade800 : Colors.green.shade800)),
+                                  ),
+                                  PopupMenuButton<String>(
+                                    onSelected: (val) {
+                                      if (val == 'delete') {
+                                        _deleteOrder(orderId);
+                                      } else {
+                                        _updateOrderStatus(orderId, val);
+                                      }
+                                    },
+                                    itemBuilder: (context) => [
+                                      const PopupMenuItem(value: 'Pending', child: Text('⏳ Pending')),
+                                      const PopupMenuItem(value: 'Accept', child: Text('✅ Accept (स्वीकार करें)')),
+                                      const PopupMenuItem(value: 'Out for Delivery', child: Text('🛵 Out for Delivery')),
+                                      const PopupMenuItem(value: 'Delivered', child: Text('🎉 Delivered')),
+                                      const PopupMenuItem(value: 'Cancelled', child: Text('❌ Cancelled', style: TextStyle(color: Colors.red))),
+                                      const PopupMenuItem(value: 'delete', child: Text('🗑️ डिलीट करें', style: TextStyle(color: Colors.red))),
+                                    ],
                                   ),
                                 ],
                               ),
-                              const Divider(height: 10),
-
-                              // 👤 ग्राहक की जानकारी
-                              Row(
-                                children: [
-                                  const Icon(Icons.person, size: 14, color: Colors.green),
-                                  const SizedBox(width: 4),
-                                  Text(customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                  const SizedBox(width: 8),
-                                  if (customerPhone.isNotEmpty)
-                                    Text('($customerPhone)', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                ],
-                              ),
+                              if (custPhone.isNotEmpty)
+                                Text('📞 ($custPhone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
                               const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on, size: 14, color: Colors.redAccent),
-                                  const SizedBox(width: 4),
-                                  Expanded(child: Text('पता: $deliveryAddress', style: const TextStyle(fontSize: 11, color: Colors.black87))),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
+                              Text('पता: $custAddress', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              const SizedBox(height: 6),
+                              
+                              // 🕒 टाइमर और तारीख
+                              Text(_getOrderTimeInfo(timestamp), style: const TextStyle(fontSize: 10, color: Colors.blueGrey, fontStyle: FontStyle.italic)),
+                              const Divider(height: 12),
 
-                              // 📦 आर्डर किए गए आइटम्स की लिस्ट (नाम, इमेज और क्वांटिटी के साथ)
-                              const Text('आइटम्स:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.green)),
-                              const SizedBox(height: 4),
-                              ...itemsList.map((item) {
-                                String itemName = item['name'] ?? item['title'] ?? item['productName'] ?? 'Product';
-                                var qty = item['qty'] ?? item['quantity'] ?? 1;
-                                var price = item['price'] ?? item['rate'] ?? 0;
-                                String? imgUrl = item['imageUrl'] ?? item['image'] ?? item['img'] ?? item['photoUrl'];
+                              // 🛒 आर्डर के आइटम्स, फोटो और क्वांटिटी दिखाने की लिस्ट
+                              ...itemsList.map((it) {
+                                var m = it is Map ? it : {};
+                                String itemName = m['name'] ?? m['title'] ?? 'आइटम';
+                                var itemQty = m['qty'] ?? 1;
+                                var itemPrice = double.tryParse(m['price'].toString()) ?? 0;
+                                String? img = m['image'] ?? m['imageUrl'];
 
                                 return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 3),
+                                  padding: const EdgeInsets.symmetric(vertical: 3.0),
                                   child: Row(
                                     children: [
-                                      // 🖼️ आइटम की फोटो
-                                      if (imgUrl != null && imgUrl.isNotEmpty)
+                                      if (img != null && img.isNotEmpty)
                                         ClipRRect(
-                                          borderRadius: BorderRadius.circular(6),
-                                          child: Image.network(imgUrl, width: 35, height: 35, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 30, color: Colors.grey)),
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: Image.network(
+                                            img, 
+                                            width: 30, 
+                                            height: 30, 
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 24, color: Colors.grey),
+                                          ),
                                         )
                                       else
-                                        Container(
-                                          width: 35,
-                                          height: 35,
-                                          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
-                                          child: const Icon(Icons.fastfood, size: 20, color: Colors.grey),
-                                        ),
+                                        const Icon(Icons.fastfood, size: 24, color: Colors.grey),
                                       const SizedBox(width: 8),
-                                      // आइटम का नाम और मात्रा
                                       Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(itemName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                            Text('मात्रा: $qty  |  मूल्य: ₹$price', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                          ],
-                                        ),
+                                        child: Text('• $itemName (x$itemQty)', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                                       ),
+                                      Text('₹${itemPrice * (double.tryParse(itemQty.toString()) ?? 1)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 );
                               }),
 
                               const Divider(height: 12),
-
-                              // 💵 कुल राशि और एक्शन बटन (डिलीट / स्टेटस चेंज)
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('कुल राशि: ₹$totalAmount', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.green)),
-                                  Row(
-                                    children: [
-                                      ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
-                                        onPressed: () => _updateOrderStatus(orderId, 'Accepted'),
-                                        child: const Text('स्वीकार करें', style: TextStyle(fontSize: 10)),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
-                                        onPressed: () => _deleteOrder(orderId),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        tooltip: 'डिलीट करें',
-                                      ),
-                                    ],
-                                  ),
+                                  Text('कुल राशि: ₹$grandTotal', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade800)),
+                                  Text('स्टेटस: $status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: status == 'Accept' ? Colors.green : (status == 'Delivered' ? Colors.blue : Colors.orange))),
                                 ],
                               ),
                             ],
