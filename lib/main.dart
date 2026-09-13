@@ -3,10 +3,29 @@ import 'package:firebase_core/firebase_core.dart';
 import 'database_models.dart';
 import 'marketplace_buyer_view.dart';
 import 'cart_and_orders_view.dart';
-import 'image_picker_helper.dart';
 import 'rider_delivery_view.dart'; 
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+
+// इनलाइन इमेज पिकर हेल्पर ताकि कोई 'Member not found' एरर न आए
+class DirectImagePickerHelper {
+  static final ImagePicker _picker = ImagePicker();
+
+  static Future<String?> pickImageAndGetUrl() async {
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+      if (image != null) {
+        // यदि लोकल फाइल चुनी गई है, तो उसका रास्ता या बेस64/डमी यूआरएल रिटर्न करें
+        return image.path;
+      }
+    } catch (e) {
+      debugPrint("Image pick error: $e");
+    }
+    return null;
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -647,7 +666,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
             Expanded(
               child: TabBarView(
                 children: [
-                  // Tab 1: Customer Orders (Full Time, Date, Photos & Items View)
+                  // Tab 1: Customer Orders
                   isLoadingOrders
                       ? const Center(child: CircularProgressIndicator(color: Colors.green))
                       : allVendorOrders.isEmpty
@@ -720,7 +739,9 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                                         ClipRRect(
                                                           borderRadius: BorderRadius.circular(4),
                                                           child: itemImg.isNotEmpty
-                                                              ? Image.network(itemImg, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag, size: 20))
+                                                              ? (itemImg.startsWith('http') 
+                                                                  ? Image.network(itemImg, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag, size: 20))
+                                                                  : Image.file(File(itemImg), width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag, size: 20)))
                                                               : Container(
                                                                   width: 40,
                                                                   height: 40,
@@ -789,7 +810,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black87),
                               onPressed: () async {
-                                String? img = await ImagePickerHelper.pickImageAndGetUrl();
+                                String? img = await DirectImagePickerHelper.pickImageAndGetUrl();
                                 if (img != null) {
                                   setState(() => selectedItemImage = img);
                                 }
@@ -834,7 +855,9 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                                           leading: ClipRRect(
                                             borderRadius: BorderRadius.circular(6),
                                             child: imgUrl.isNotEmpty
-                                                ? Image.network(imgUrl, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.error))
+                                                ? (imgUrl.startsWith('http')
+                                                    ? Image.network(imgUrl, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.error))
+                                                    : Image.file(File(imgUrl), width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.error)))
                                                 : const Icon(Icons.shopping_bag),
                                           ),
                                           title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
