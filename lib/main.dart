@@ -1,3 +1,7 @@
+// =========================================================================
+// VIZIAG MART ENTERPRISE PLATFORM (FULL 1050+ LINES ULTIMATE CODE)
+// =========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'database_models.dart';
@@ -14,7 +18,7 @@ void main() async {
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint("Firebase init warning: $e");
+    debugPrint("Firebase initialization warning: $e");
   }
 
   runApp(const CakeAppEnterpriseApp());
@@ -26,7 +30,7 @@ class CakeAppEnterpriseApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Viziag Mart',
+      title: 'Viziag Mart Enterprise',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -58,7 +62,10 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
 
   @override
   Widget build(BuildContext context) {
-    int totalCartCount = CakeDatabase.cartItems.fold(0, (sum, item) => sum + ((item['qty'] as num?)?.toInt() ?? 1));
+    int totalCartCount = CakeDatabase.cartItems.fold(
+      0, 
+      (sum, item) => sum + ((item['qty'] as num?)?.toInt() ?? 1)
+    );
 
     return Scaffold(
       appBar: PreferredSize(
@@ -70,18 +77,33 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
             children: [
               const Text(
                 'VIZIAG MART',
-                style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.5),
+                style: TextStyle(
+                  color: Colors.black87, 
+                  fontWeight: FontWeight.w900, 
+                  fontSize: 18, 
+                  letterSpacing: 1.5
+                ),
               ),
               const Spacer(),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), minimumSize: Size.zero),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700, 
+                  foregroundColor: Colors.white, 
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), 
+                  minimumSize: Size.zero
+                ),
                 onPressed: () => setState(() => _selectedTabIndex = 0),
                 icon: const Icon(Icons.store, size: 14),
                 label: const Text('Shop', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 6),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black87, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), minimumSize: Size.zero),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey.shade200, 
+                  foregroundColor: Colors.black87, 
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), 
+                  minimumSize: Size.zero
+                ),
                 onPressed: () => setState(() => _selectedTabIndex = 1),
                 icon: const Icon(Icons.lock_outline, size: 14),
                 label: const Text('Vendor', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
@@ -101,14 +123,20 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
                       children: [
                         Icon(Icons.person_pin_circle, color: Colors.green.shade700, size: 15),
                         const SizedBox(width: 6),
-                        Text(CakeDatabase.currentCustomerName, style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)),
+                        Text(
+                          CakeDatabase.currentCustomerName, 
+                          style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)
+                        ),
                       ],
                     ),
                   ),
                   const Spacer(),
                   GestureDetector(
                     onTap: () => _showProfileEditDialog(context),
-                    child: Text('(Edit Profile & Address)', style: TextStyle(color: Colors.green.shade700, fontSize: 10, fontWeight: FontWeight.w600)),
+                    child: Text(
+                      '(Edit Profile & Address)', 
+                      style: TextStyle(color: Colors.green.shade700, fontSize: 10, fontWeight: FontWeight.w600)
+                    ),
                   ),
                 ],
               ),
@@ -116,7 +144,10 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
           ),
         ),
       ),
-      body: IndexedStack(index: _selectedTabIndex > 3 ? 3 : _selectedTabIndex, children: _tabScreens),
+      body: IndexedStack(
+        index: _selectedTabIndex > 3 ? 3 : _selectedTabIndex, 
+        children: _tabScreens
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedTabIndex > 3 ? 3 : _selectedTabIndex,
         selectedItemColor: Colors.green.shade700,
@@ -140,7 +171,11 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
                       padding: const EdgeInsets.all(2),
                       decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
                       constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                      child: Text('$totalCartCount', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                      child: Text(
+                        '$totalCartCount', 
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold), 
+                        textAlign: TextAlign.center
+                      ),
                     ),
                   ),
               ],
@@ -216,11 +251,15 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
 
   Future<void> _submitRegistration() async {
     if (regPhoneCtrl.text.trim().length < 10 || regShopNameCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया दुकान का नाम और सही मोबाइल नंबर भरें!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ कृपया दुकान का नाम और सही मोबाइल नंबर भरें!'), backgroundColor: Colors.red)
+      );
       return;
     }
     if (regPass1Ctrl.text.isEmpty || regPass1Ctrl.text != regPass2Ctrl.text) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ पासवर्ड मेल नहीं खा रहे हैं!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ पासवर्ड मेल नहीं खा रहे हैं!'), backgroundColor: Colors.red)
+      );
       return;
     }
 
@@ -232,6 +271,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
         'address': regAddressCtrl.text.trim().isEmpty ? 'Faridabad' : regAddressCtrl.text.trim(),
         'pass': regPass1Ctrl.text.trim(),
         'status': 'pending',
+        'createdAt': DateTime.now().toIso8601String(),
       };
 
       await http.post(
@@ -267,7 +307,9 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
     String pass = loginPassCtrl.text.trim();
 
     if (phone.isEmpty || pass.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया मोबाइल नंबर और पासवर्ड दर्ज करें!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ कृपया मोबाइल नंबर और पासवर्ड दर्ज करें!'), backgroundColor: Colors.red)
+      );
       return;
     }
 
@@ -288,7 +330,9 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       if (isApproved) {
         setState(() => _viewMode = 3);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ स्वागत है! वेंडर डैशबोर्ड खुल गया है।'), backgroundColor: Colors.green));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✅ स्वागत है! वेंडर डैशबोर्ड खुल गया है।'), backgroundColor: Colors.green)
+          );
         }
       } else {
         if (mounted) {
@@ -314,7 +358,9 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       setState(() => _viewMode = 5);
       adminCodeCtrl.clear();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ गलत गुप्त कोड!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ गलत गुप्त कोड!'), backgroundColor: Colors.red)
+      );
     }
   }
 
@@ -511,12 +557,11 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-    // मास्टर एडमिन अप्रूवल सेक्शन (Tarun Panel) पूर्ण लॉजिक के साथ
     return AdminApprovalDashboardView(onBack: () => setState(() => _viewMode = 0));
   }
 }
 
-// 👑 मास्टर एडमिन अप्रूवल डैशबोर्ड (Tarun Panel - पूर्ण कोड)
+// 👑 मास्टर एडमिन अप्रूवल डैशबोर्ड (Tarun Panel)
 class AdminApprovalDashboardView extends StatefulWidget {
   final VoidCallback onBack;
   const AdminApprovalDashboardView({super.key, required this.onBack});
@@ -564,7 +609,9 @@ class _AdminApprovalDashboardViewState extends State<AdminApprovalDashboardView>
       );
       _fetchRequests();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ दुकान का स्टेटस "$status" कर दिया गया!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ दुकान का स्टेटस "$status" कर दिया गया!'), backgroundColor: Colors.green)
+        );
       }
     } catch (e) {
       debugPrint("Update error: $e");
@@ -637,7 +684,7 @@ class _AdminApprovalDashboardViewState extends State<AdminApprovalDashboardView>
   }
 }
 
-// ⚡ ब्लिंकिट / जोमेटो स्टाइल लाइव आर्डर डैशबोर्ड (आइटम फोटो, नाम, मात्रा और समय के साथ)
+// ⚡ ब्लिंकिट / जोमेटो स्टाइल लाइव आर्डर डैशबोर्ड
 class VendorOrdersTab extends StatefulWidget {
   const VendorOrdersTab({super.key});
 
@@ -666,7 +713,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
           loadedOrders.add({...val, 'id': key});
         });
         setState(() {
-          liveOrders = loadedOrders.reversed.toList(); // नए ऑर्डर सबसे ऊपर
+          liveOrders = loadedOrders.reversed.toList();
         });
       }
     } catch (e) {
@@ -684,7 +731,9 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
       );
       _fetchLiveOrders();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ आर्डर स्टेटस बदलकर "$newStatus" कर दिया गया!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ आर्डर स्टेटस बदलकर "$newStatus" कर दिया गया!'), backgroundColor: Colors.green)
+        );
       }
     } catch (e) {
       debugPrint("Status update error: $e");
@@ -760,7 +809,6 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                             Text('📍 पता: ${order['address'] ?? 'N/A'}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                             const SizedBox(height: 8),
                             
-                            // 🛒 यहाँ आइटम्स, क्वांटिटी और फोटो साफ़ दिखेंगे
                             const Text('🛍️ ऑर्डर किए गए आइटम्स:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                             const SizedBox(height: 4),
                             Container(
@@ -776,7 +824,6 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                                           padding: const EdgeInsets.symmetric(vertical: 4),
                                           child: Row(
                                             children: [
-                                              // 🖼️ प्रोडक्ट का फोटो थंबनेल
                                               ClipRRect(
                                                 borderRadius: BorderRadius.circular(6),
                                                 child: imgUrl.isNotEmpty
@@ -850,7 +897,9 @@ class _VendorProductsTabState extends State<VendorProductsTab> {
 
   Future<void> _addProduct() async {
     if (nameCtrl.text.isEmpty || priceCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया नाम और कीमत भरें!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ कृपया नाम और कीमत भरें!'), backgroundColor: Colors.red)
+      );
       return;
     }
 
@@ -859,6 +908,7 @@ class _VendorProductsTabState extends State<VendorProductsTab> {
       'price': double.tryParse(priceCtrl.text.trim()) ?? 0.0,
       'description': descCtrl.text.trim(),
       'image': imageUrl ?? '',
+      'createdAt': DateTime.now().toIso8601String(),
     };
 
     await http.post(
@@ -872,7 +922,9 @@ class _VendorProductsTabState extends State<VendorProductsTab> {
     setState(() => imageUrl = null);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ प्रोडक्ट सफलतापूर्वक जुड़ गया!'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ प्रोडक्ट सफलतापूर्वक जुड़ गया!'), backgroundColor: Colors.green)
+      );
     }
   }
 
@@ -935,7 +987,9 @@ class _VendorSettingsTabState extends State<VendorSettingsTab> {
           value: isStoreOpen,
           onChanged: (val) {
             setState(() => isStoreOpen = val);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(val ? '🟢 दुकान अब खुली है!' : '🔴 दुकान बंद कर दी गई है!')));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(val ? '🟢 दुकान अब खुली है!' : '🔴 दुकान बंद कर दी गई है!'))
+            );
           },
           activeColor: Colors.green,
         ),
