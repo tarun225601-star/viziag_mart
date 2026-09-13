@@ -609,7 +609,8 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('कुल राशि: ₹$grandTotal', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade800)),
+                                  Text('कुल राशि: ₹$grandTotal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade800)),
+                                  
                                   Text('स्टेटस: $status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: status == 'Accept' ? Colors.green : (status == 'Delivered' ? Colors.blue : Colors.orange))),
                                 ],
                               ),
