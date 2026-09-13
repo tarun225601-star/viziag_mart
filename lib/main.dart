@@ -1,4 +1,5 @@
-import 'vendor_auth_and_portal_view.dart';
+import 'vendor_auth_portal.dart';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'database_models.dart';
