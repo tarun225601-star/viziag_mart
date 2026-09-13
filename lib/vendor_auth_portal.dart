@@ -32,6 +32,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
 
   List<Map<String, dynamic>> _vendorOrders = [];
   StreamSubscription<DatabaseEvent>? _ordersSubscription; 
+  Timer? _uiRefreshTimer; // 🕒 लाइव टाइमर को हर 30 सेकंड में अपडेट रखने के लिए
   
   Set<String> _localSeenOrderIds = {};
   bool _isFirstLoad = true;
@@ -41,6 +42,11 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
     super.initState();
     _isShopOpen = CakeDatabase.bakeryShop['isOpen'] ?? true;
     _loadLocalSeenOrders();
+    
+    // 🕒 लाइव टाइमर अपडेट करने वाला टिकर
+    _uiRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _loadLocalSeenOrders() async {
@@ -59,6 +65,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
   @override
   void dispose() {
     _ordersSubscription?.cancel(); 
+    _uiRefreshTimer?.cancel();
     regShopNameCtrl.dispose();
     regPhoneCtrl.dispose();
     regAddressCtrl.dispose();
@@ -130,6 +137,40 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
     });
   }
 
+  // 🕒 आर्डर की सही तारीख, समय और टाइमर कैलकुलेट करने का शानदार फंक्शन
+  String _getOrderTimeInfo(dynamic timestamp) {
+    if (timestamp == null || timestamp.toString().isEmpty) return 'अभी-अभी';
+    try {
+      DateTime orderTime;
+      if (timestamp is int) {
+        orderTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      } else {
+        orderTime = DateTime.parse(timestamp.toString());
+      }
+
+      Duration diff = DateTime.now().difference(orderTime);
+      
+      // तारीख और समय का फॉर्मेट
+      String dateStr = "${orderTime.day}/${orderTime.month}/${orderTime.year}";
+      String timeStr = "${orderTime.hour > 12 ? orderTime.hour - 12 : (orderTime.hour == 0 ? 12 : orderTime.hour)}:${orderTime.minute.toString().padLeft(2, '0')} ${orderTime.hour >= 12 ? 'PM' : 'AM'}";
+
+      String ago = '';
+      if (diff.inMinutes < 1) {
+        ago = 'अभी-अभी (Just now)';
+      } else if (diff.inMinutes < 60) {
+        ago = '${diff.inMinutes} मिनट पहले';
+      } else if (diff.inHours < 24) {
+        ago = '${diff.inHours} घंटे पहले';
+      } else {
+        ago = '${diff.inDays} दिन पहले';
+      }
+
+      return '📅 $dateStr | ⏰ $timeStr  ($ago)';
+    } catch (e) {
+      return timestamp.toString();
+    }
+  }
+
   Future<void> _deleteOrder(String orderId) async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -173,20 +214,6 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       }
     } catch (e) {
       debugPrint("Status update error: $e");
-    }
-  }
-
-  String _getTimeAgo(String? timeStr) {
-    if (timeStr == null || timeStr.isEmpty) return 'अभी-अभी';
-    try {
-      DateTime orderTime = DateTime.parse(timeStr);
-      Duration diff = DateTime.now().difference(orderTime);
-      if (diff.inMinutes < 1) return 'अभी-अभी';
-      if (diff.inMinutes < 60) return '${diff.inMinutes} मिनट पहले';
-      if (diff.inHours < 24) return '${diff.inHours} घंटे पहले';
-      return '${orderTime.day}/${orderTime.month} ${orderTime.hour.toString().padLeft(2, '0')}:${orderTime.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return timeStr;
     }
   }
 
@@ -417,7 +444,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-    // 🟢 वेंडर डैशबोर्ड (आइटम फोटो, नाम, क्वांटिटी और पूरे बिल के साथ)
+    // 🟢 वेंडर डैशबोर्ड (आइटम फोटो, नाम, क्वांटिटी, पूरा बिल, डेट, टाइम और टाइमर के साथ)
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -462,7 +489,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('🚀 लाइव ऑर्डर्स (Itemized Bill)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Text('🚀 लाइव ऑर्डर्स (Itemized Bill & Timer)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(12)),
@@ -495,13 +522,15 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                       String status = ord['orderStatus'] ?? ord['status'] ?? 'Pending ⏳';
                       var items = ord['items'] as List<dynamic>? ?? [];
                       double total = (ord['grandTotal'] ?? ord['totalAmount'] ?? 0.0).toDouble();
-                      String timeAgo = _getTimeAgo(ord['orderTime'] ?? ord['timestamp']);
-                      bool isAccepted = status.toLowerCase().contains('accepted');
+
+                      // 🕒 ऑर्डर का टाइम और डेट
+                      var rawTime = ord['orderTime'] ?? ord['timestamp'] ?? ord['createdAt'];
+                      String timeInfo = _getOrderTimeInfo(rawTime);
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: Padding(
                           padding: const EdgeInsets.all(12.0),
                           child: Column(
@@ -509,88 +538,88 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                             children: [
                               Row(
                                 children: [
-                                  Text('📦 #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
+                                  Text('📦 Order ID: #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
                                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green.shade800)),
                                   const Spacer(),
-                                  Text(timeAgo, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                  const SizedBox(width: 8),
                                   IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                     onPressed: () => _deleteOrder(orderId),
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
-                                    tooltip: 'ऑर्डर डिलीट करें',
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('ग्राहक: $customerName ($phone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isAccepted ? Colors.blue.shade100 : Colors.orange.shade100,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text('स्टेटस: $status', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isAccepted ? Colors.blue.shade800 : Colors.orange.shade800)),
-                                  ),
-                                ],
+
+                              // 📅 टाइमर और डेट का बॉक्स
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.amber.shade200),
+                                ),
+                                child: Text(
+                                  timeInfo,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800),
+                                ),
                               ),
-                              const SizedBox(height: 3),
-                              Text('पता: $address', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                              const SizedBox(height: 8),
+
+                              Text('👤 ग्राहक: $customerName ($phone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                              Text('📍 पता: $address', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                               const Divider(height: 12),
-                              const Text('🛒 आर्डर किए गए आइटम्स (फोटो सहित):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+
+                              // 🛒 आइटम्स, फोटो और क्वांटिटी (वेंडर के पैक करने के लिए)
+                              const Text('🛒 आर्डर किए गए आइटम्स (पैक करें):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                               const SizedBox(height: 4),
-                              
-                              // 📸 आइटम लिस्ट, फोटो और क्वांटिटी दिखाने वाला हिस्सा
+
                               ...items.map((it) {
                                 var m = it is Map ? it : {};
-                                String itemName = m['name'] ?? m['title'] ?? m['itemName'] ?? 'Item';
+                                String itemName = m['name'] ?? m['title'] ?? 'Product';
                                 var qty = m['qty'] ?? m['quantity'] ?? 1;
-                                double price = (m['price'] ?? m['unitPrice'] ?? 0.0).toDouble();
+                                double price = (m['price'] ?? 0.0).toDouble();
                                 String? imgUrl = m['imageUrl'] ?? m['image'] ?? m['img'];
 
                                 return Container(
-                                  margin: const EdgeInsets.symmetric(vertical: 3),
-                                  padding: const EdgeInsets.all(4),
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: Colors.grey.shade200),
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Row(
                                     children: [
-                                      // 🖼️ आइटम की छोटी फोटो (Thumbnail)
+                                      // 📸 आइटम की फोटो
                                       ClipRRect(
-                                        borderRadius: BorderRadius.circular(4),
+                                        borderRadius: BorderRadius.circular(6),
                                         child: imgUrl != null && imgUrl.isNotEmpty
                                             ? Image.network(
                                                 imgUrl,
-                                                width: 35,
-                                                height: 35,
+                                                width: 40,
+                                                height: 40,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 22, color: Colors.grey),
+                                                errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 30, color: Colors.grey),
                                               )
                                             : Container(
-                                                width: 35,
-                                                height: 35,
+                                                width: 40,
+                                                height: 40,
                                                 color: Colors.green.shade100,
-                                                child: const Icon(Icons.shopping_bag, size: 18, color: Colors.green),
+                                                child: const Icon(Icons.shopping_bag, size: 20, color: Colors.green),
                                               ),
                                       ),
-                                      const SizedBox(width: 8),
+                                      const SizedBox(width: 10),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(itemName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                            Text('मात्रा (Qty): $qty', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                            Text(itemName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                            Text('मात्रा (Qty): $qty', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                           ],
                                         ),
                                       ),
-                                      Text('₹${(price * qty).toInt()}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                                      Text('₹${(price * qty).toInt()}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
                                     ],
                                   ),
                                 );
@@ -600,26 +629,26 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('कुल राशि: ₹${total.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                  Row(
-                                    children: [
-                                      if (!isAccepted)
-                                        Padding(
-                                          padding: const EdgeInsets.only(right: 6),
-                                          child: ElevatedButton.icon(
-                                            onPressed: () => _updateOrderStatus(orderId, 'Accepted ✅'),
-                                            icon: const Icon(Icons.check, size: 12),
-                                            label: const Text('स्वीकार करें', style: TextStyle(fontSize: 10)),
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, minimumSize: const Size(0, 28)),
-                                          ),
-                                        ),
-                                      ElevatedButton.icon(
-                                        onPressed: () => _updateOrderStatus(orderId, 'Delivered 🎉'),
-                                        icon: const Icon(Icons.done_all, size: 12),
-                                        label: const Text('तैयार / डिलेवर', style: TextStyle(fontSize: 10)),
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(0, 28)),
-                                      ),
-                                    ],
+                                  Text('कुल राशि: ₹${total.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  Text('स्टेटस: $status', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.orange)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+
+                              // एक्शन बटन (ऑर्डर स्वीकार या डिलीवर करने के लिए)
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  ElevatedButton(
+                                    onPressed: () => _updateOrderStatus(orderId, 'Accepted ✅'),
+                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, minimumSize: const Size(80, 30)),
+                                    child: const Text('स्वीकार करें', style: TextStyle(fontSize: 11)),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton(
+                                    onPressed: () => _updateOrderStatus(orderId, 'Delivered 🎉'),
+                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(80, 30)),
+                                    child: const Text('डिलीवर', style: TextStyle(fontSize: 11)),
                                   ),
                                 ],
                               ),
