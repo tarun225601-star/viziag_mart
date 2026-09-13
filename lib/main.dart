@@ -870,25 +870,125 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemCount: allOrders.length,
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
-                    return Card(
-                      margin: const EdgeInsets.all(8),
-                      child: ListTile(
-                        title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
-                        subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
-                        isThreeLine: true,
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
-                            const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
-                            const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
-                            const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                    ListView.builder(
+  padding: const EdgeInsets.all(12),
+  itemCount: allOrders.length,
+  itemBuilder: (context, index) {
+    var ord = allOrders[index];
+    String orderId = ord['orderId'] ?? '';
+    String customerName = ord['customerName'] ?? ord['name'] ?? 'Customer';
+    String phone = ord['customerPhone'] ?? ord['phone'] ?? '';
+    String deliveryAddress = ord['customerAddress'] ?? ord['deliveryAddress'] ?? ord['address'] ?? 'पता उपलब्ध नहीं';
+    String status = ord['orderStatus'] ?? ord['status'] ?? 'Pending ⏳';
+    var items = ord['items'] as List<dynamic>? ?? [];
+    double totalAmount = (ord['totalAmount'] ?? ord['grandTotal'] ?? 0.0).toDouble();
+
+    bool isAccepted = status.toLowerCase().contains('accepted');
+    bool isDelivered = status.toLowerCase().contains('delivered');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // आर्डर आईडी और स्टेटस
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('📦 #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange.shade800)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isDelivered ? Colors.green.shade100 : (isAccepted ? Colors.blue.shade100 : Colors.orange.shade100),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(status, style: TextStyle(
+                    fontSize: 11, 
+                    fontWeight: FontWeight.bold, 
+                    color: isDelivered ? Colors.green.shade800 : (isAccepted ? Colors.blue.shade800 : Colors.orange.shade800)
+                  )),
                 ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text('ग्राहक: $customerName ($phone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            const SizedBox(height: 8),
+
+            // डिलीवरी एड्रेस बॉक्स
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.location_on, size: 14, color: Colors.red),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text('डिलीवरी एड्रेस: $deliveryAddress', style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w500))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            const Text('🛒 आर्डर आइटम्स:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey)),
+            const SizedBox(height: 4),
+
+            // आइटम्स और क्वांटिटी की लिस्ट
+            ...items.map((it) {
+              var m = it is Map ? it : {};
+              String itemName = m['name'] ?? m['title'] ?? 'आइटम';
+              var itemQty = m['qty'] ?? 1;
+              var itemPrice = double.tryParse(m['price'].toString()) ?? 0;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('• $itemName (Qty: $itemQty)', style: const TextStyle(fontSize: 12)),
+                    Text('₹${itemPrice * (double.tryParse(itemQty.toString()) ?? 1)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              );
+            }),
+
+            const Divider(height: 12),
+            
+            // कुल राशि और स्टेटस बदलने वाला बटन
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('कुल राशि: ₹$totalAmount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange.shade800)),
+                PopupMenuButton<String>(
+                  onSelected: (val) => _updateStatus(orderId, val),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'Accepted ✅', child: Text('स्वीकार करें')),
+                    const PopupMenuItem(value: 'Ready / Packed 📦', child: Text('पैक हो गया')),
+                    const PopupMenuItem(value: 'Delivered 🎉', child: Text('डि डिलीवर')),
+                    const PopupMenuItem(value: 'Cancelled ❌', child: Text('रद्द करें')),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(6)),
+                    child: const Text('स्टेटस बदलें ▾', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  },
+)
+
         ),
       ],
     );
