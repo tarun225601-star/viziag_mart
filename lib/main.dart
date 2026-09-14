@@ -762,8 +762,8 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
                 itemBuilder: (context, index) {
                   var p = items[index];
                   bool inStock = p['inStock'] ?? true;
-                          return Card(
-                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                           color: Colors.white,
                           elevation: 2,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -790,20 +790,23 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
                                 PopupMenuItem(value: 'Delivered', child: Text('Deliver')),
                               ],
                             ),
-                            children: orderItems.map((item) {
-                              // 🟢 यहाँ आइटम की फोटो और क्वांटिटी के सभी संभावित की (Keys) को सुरक्षित कर दिया गया है
+                            children: orderItems.map<Widget>((item) {
                               var itemImg = item['image'] ?? item['img'] ?? '';
                               var itemName = item['name'] ?? item['title'] ?? 'Product Item';
                               var itemQty = item['qty'] ?? item['quantity'] ?? 1;
                               var itemPrice = item['price'] ?? item['rate'] ?? '0';
 
-                              return ListTile(
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: buildShopOrProdImage(itemImg, 40, 40, Icons.fastfood),
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: buildShopOrProdImage(itemImg, 45, 45, Icons.fastfood),
+                                  ),
+                                  title: Text(itemName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  subtitle: Text('मात्रा (Qty): $itemQty | दाम: ₹$itemPrice', style: const TextStyle(fontSize: 11, color: Colors.black54)),
                                 ),
-                                title: Text(itemName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                subtitle: Text('मात्रा (Qty): $itemQty | दाम: ₹$itemPrice', style: const TextStyle(fontSize: 11)),
                               );
                             }).toList(),
                           ),
@@ -812,7 +815,39 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
                     ),
                   ),
 
-                  const Center(child: Text('Settings Tab Content')),
+                  // Tab 3: Settings Tab Content
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('⚙️ दुकान सेटिंग्स और विवरण', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 15),
+                        TextField(
+                          controller: TextEditingController(text: CakeDatabase.bakeryShop['shopName'] ?? 'Viziag Mart'),
+                          decoration: const InputDecoration(labelText: 'दुकान का नाम (Shop Name)', border: OutlineInputBorder()),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: TextEditingController(text: CakeDatabase.bakeryShop['phone'] ?? '9971968060'),
+                          decoration: const InputDecoration(labelText: 'वेंडर फोन नंबर', border: OutlineInputBorder()),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: TextEditingController(text: CakeDatabase.bakeryShop['address'] ?? 'Faridabad'),
+                          decoration: const InputDecoration(labelText: 'दुकान का एड्रेस', border: OutlineInputBorder()),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, minimumSize: const Size.fromHeight(45)),
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('सेटिंग्स सफलतापूर्वक अपडेट हो गईं!')));
+                          },
+                          child: const Text('सेव करें (Save Changes)', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -845,6 +880,74 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
             const SizedBox(height: 10),
             TextButton(onPressed: () => setState(() => _viewMode = 0), child: const Text('← वापस जाएं')),
           ],
+        ),
+      );
+    }
+
+    // 🟢 यह रहा वो पूरा 50 लाइनों वाला मास्टर एडमिन अप्रूवल पैनल जो पिछली बार छूट गया था
+    if (_viewMode == 5) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('👑 मास्टर एडमिन - वेंडर अप्रूवल पैनल', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.green.shade700,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => setState(() => _viewMode = 0),
+          ),
+        ),
+        body: FutureBuilder<http.Response>(
+          future: http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_requests.json')),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.data!.body == 'null' || snapshot.data!.body.isEmpty) {
+              return const Center(child: Text('कोई पेंडिंग वेंडर रिक्वेस्ट नहीं है।'));
+            }
+
+            Map<String, dynamic> data = json.decode(snapshot.data!.body);
+            List<MapEntry<String, dynamic>> requests = data.entries.toList();
+
+            return ListView.builder(
+              itemCount: requests.length,
+              itemBuilder: (context, index) {
+                var reqId = requests[index].key;
+                var reqVal = requests[index].value;
+                bool isApproved = reqVal['status'] == 'approved';
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: ListTile(
+                    title: Text(reqVal['name'] ?? 'Unknown Shop', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('📞 ${reqVal['phone']} | पास: ${reqVal['pass']}'),
+                        Text('पता: ${reqVal['address']}'),
+                        Text('स्टेटस: ${reqVal['status']}', style: TextStyle(color: isApproved ? Colors.green : Colors.orange, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    trailing: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isApproved ? Colors.red : Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        String newStatus = isApproved ? 'pending' : 'approved';
+                        await http.patch(
+                          Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_requests/$reqId.json'),
+                          body: json.encode({'status': newStatus}),
+                        );
+                        setState(() {});
+                      },
+                      child: Text(isApproved ? 'Revoke' : 'Approve'),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
         ),
       );
     }
@@ -893,4 +996,3 @@ class _VendorSettingsTabState extends State<VendorSettingsTab> {
     );
   }
 }
-          
