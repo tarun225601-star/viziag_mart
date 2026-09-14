@@ -869,29 +869,25 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
                     return Card(
-                      margin: const EdgeInsets.all(8),
-                      child: ListTile(
-                        title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
-                        subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
-                        isThreeLine: true,
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
-                            const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
-                            const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
-                            const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
+  margin: const EdgeInsets.all(8),
+  child: ExpansionTile(
+    title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+    subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
+    trailing: PopupMenuButton<String>(
+      onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'Accepted', child: Text('Accept')),
+        PopupMenuItem(value: 'Delivered', child: Text('Deliver')),
       ],
-    );
-  }
-}
+    ),
+    children: ((ord['items'] as List?)?.map((i) => ListTile(
+          leading: buildShopOrProdImage(i['image'], 35, 35, Icons.fastfood),
+          title: Text(i['name'] ?? ''),
+          subtitle: Text('Qty: ${i['qty']} | ₹${i['price']}'),
+        )) ?? []).toList(),
+  ),
+);
+
 
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
