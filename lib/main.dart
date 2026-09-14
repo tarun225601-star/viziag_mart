@@ -765,6 +765,18 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
                                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                           color: Colors.white,
+                                            // Tab 2: Live Orders with item photos and quantities fixed
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: ListView.builder(
+                      itemCount: CakeDatabase.cartItems.length,
+                      itemBuilder: (context, index) {
+                        var ord = CakeDatabase.cartItems[index];
+                        var orderItems = (ord['items'] ?? ord['cartItems'] ?? []) as List<dynamic>;
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                          color: Colors.white,
                           elevation: 2,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           child: ExpansionTile(
@@ -814,6 +826,7 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
                       },
                     ),
                   ),
+
 
                   // Tab 3: Settings Tab Content
                   Padding(
