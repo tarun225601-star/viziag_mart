@@ -862,7 +862,7 @@ class VendorSettingsTab extends StatefulWidget {
   @override
   State<VendorSettingsTab> createState() => _VendorSettingsTabState();
 }
-
+}
 class _VendorSettingsTabState extends State<VendorSettingsTab> {
   final shopNameCtrl = TextEditingController(text: CakeDatabase.bakeryShop['shopName']);
   final addressCtrl = TextEditingController(text: CakeDatabase.bakeryShop['address']);
