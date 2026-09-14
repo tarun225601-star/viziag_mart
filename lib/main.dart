@@ -880,13 +880,13 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
         PopupMenuItem(value: 'Delivered', child: Text('Deliver')),
       ],
     ),
-        children: ((ord['items'] as List?)?.map((i) => ListTile(
-          leading: buildShopOrProdImage(i['image'], 35, 35, Icons.fastfood),
-          title: Text(i['name'] ?? ''),
-          subtitle: Text('Qty: ${i['qty']} | ₹${i['price']}'),
-        )) ?? []).toList(),
+              children: ((ord['items'] as List?)?.map((i) => ListTile(
+            leading: buildShopOrProdImage(i['image'], 35, 35, Icons.fastfood),
+            title: Text(i['name'] ?? ''),
+            subtitle: Text('Qty: ${i['qty']} | ₹${i['price']}'),
+          ))).toList() ?? [],
+    ),
 
-);
 
 
 class VendorSettingsTab extends StatefulWidget {
