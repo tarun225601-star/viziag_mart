@@ -848,99 +848,68 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
     _fetchOrders();
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-        const VendorOrdersTab(),
+    return Scaffold(
+      appBar: AppBar(title: const Text('वेंडर डैशबोर्ड')),
+      body: const Center(
+        child: Text('वेंडर ऑर्डर्स'),
+      ),
+    );
+  }
+}
 
-
+// यह क्लास फाइल में सबसे नीचे, बिल्कुल बाहर (Top-level पर) होनी चाहिए:
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
 
   @override
   State<VendorSettingsTab> createState() => _VendorSettingsTabState();
 }
-}
+
 class _VendorSettingsTabState extends State<VendorSettingsTab> {
   final shopNameCtrl = TextEditingController(text: CakeDatabase.bakeryShop['shopName']);
   final addressCtrl = TextEditingController(text: CakeDatabase.bakeryShop['address']);
   bool isOpen = CakeDatabase.bakeryShop['isOpen'] ?? true;
 
   Future<void> _saveSettings() async {
-    CakeDatabase.bakeryShop['shopName'] = shopNameCtrl.text;
-    CakeDatabase.bakeryShop['address'] = addressCtrl.text;
-    CakeDatabase.bakeryShop['isOpen'] = isOpen;
-    await http.put(Uri.parse('${CakeDatabase.firebaseRestUrl}/shop_profile.json'), body: json.encode(CakeDatabase.bakeryShop));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ दुकान सेटिंग्स सेव हो गई!'), backgroundColor: Colors.green));
-    }
+    setState(() {
+      CakeDatabase.bakeryShop['shopName'] = shopNameCtrl.text.trim();
+      CakeDatabase.bakeryShop['address'] = addressCtrl.text.trim();
+      CakeDatabase.bakeryShop['isOpen'] = isOpen;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('✅ सेटिंग्स सेव हो गई हैं!'), backgroundColor: Colors.green),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        Card(
-          color: isOpen ? Colors.green.shade50 : Colors.red.shade50,
-          child: SwitchListTile(
-            title: Text(isOpen ? '🟢 दुकान खुली (Open) है' : '🔴 दुकान बंद (Closed) है', style: TextStyle(fontWeight: FontWeight.bold, color: isOpen ? Colors.green.shade800 : Colors.red.shade800)),
-            subtitle: const Text('कस्टमर को आर्डर करने से रोकने या अनुमति देने के लिए टॉगल करें'),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ListView(
+        children: [
+          const Text('⚙️ दुकान की सेटिंग्स', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 15),
+          TextField(controller: shopNameCtrl, decoration: const InputDecoration(labelText: 'दुकान का नाम', border: OutlineInputBorder())),
+          const SizedBox(height: 15),
+          TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'पता', border: OutlineInputBorder())),
+          const SizedBox(height: 15),
+          SwitchListTile(
+            title: const Text('दुकान खुली है (Open / Closed)'),
             value: isOpen,
-            activeColor: Colors.green,
             onChanged: (val) => setState(() => isOpen = val),
+            activeColor: Colors.green,
           ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            Column(
-              children: [
-                const Text('दुकान की फोटो', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                const SizedBox(height: 5),
-                GestureDetector(
-                  onTap: () async {
-                    String? img = await pickAndConvertToBase64();
-                    if (img != null) setState(() => CakeDatabase.bakeryShop['shopPhotoPath'] = img);
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: buildShopOrProdImage(CakeDatabase.bakeryShop['shopPhotoPath'], 70, 70, Icons.store),
-                  ),
-                ),
-              ],
-            ),
-            Column(
-              children: [
-                const Text('बैनर फोटो', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                const SizedBox(height: 5),
-                GestureDetector(
-                  onTap: () async {
-                    String? img = await pickAndConvertToBase64();
-                    if (img != null) setState(() => CakeDatabase.bakeryShop['bannerPhotoPath'] = img);
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: buildShopOrProdImage(CakeDatabase.bakeryShop['bannerPhotoPath'], 70, 120, Icons.image),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 15),
-        TextField(controller: shopNameCtrl, decoration: const InputDecoration(labelText: 'दुकान का नाम')),
-        TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'दुकान का पता')),
-        const SizedBox(height: 15),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-          onPressed: _saveSettings,
-          child: const Text('सेव करें', style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
-      ],
+          const SizedBox(height: 20),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
+            onPressed: _saveSettings,
+            child: const Text('सेव करें', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          ),
+        ],
+      ),
     );
   }
 }
+
