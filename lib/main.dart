@@ -939,14 +939,17 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
               child: const Chip(
                 label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
                 padding: EdgeInsets.zero,
+              ],
+                ),
               ),
+            );
+            },
             ),
-          ],
-        ),
-      ],
-    ),
-  ),
-);
+            ),
+            ],
+          );
+        }
+        }
 
 
 class VendorSettingsTab extends StatefulWidget {
