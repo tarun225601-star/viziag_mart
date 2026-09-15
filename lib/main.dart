@@ -1000,17 +1000,21 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                 child: const Chip(
                   label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
                   padding: EdgeInsets.zero,
-                ),
+                        ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
-} // Ye wala bracket _VendorOrdersTabState ke andar ke method/loop ko band karega
+    );
+  }
+}
 
-// Ab yahan se agli class bilkul safe shuru hogi:
+
+
+
+
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
 
