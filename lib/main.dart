@@ -869,7 +869,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
                     
-                    return Card(
+              return Card(
   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
   elevation: 3,
   shape: RoundedRectangleBorder(
@@ -957,7 +957,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                 ],
               ),
             );
-          }),
+          }).toList(),
 
         const Divider(height: 16, thickness: 1),
 
@@ -1000,7 +1000,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
         ),
         const SizedBox(height: 10),
 
-        // 4. नीचे स्टेटस और बदलने का बटन (ब्लिंकेट एक्शन बार स्टाइल)
+        // 4. नीचे स्टेटस और बदलने का बटन
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -1029,7 +1029,6 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                 ),
                 child: const Text('Update Status ⚡', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
               
-                    
                           ],
                         ),
                       ),
