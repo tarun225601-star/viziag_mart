@@ -937,9 +937,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
           ),
         ),
       );
-    }
-  }
-                }
+  
 
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
