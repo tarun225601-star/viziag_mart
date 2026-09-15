@@ -997,19 +997,16 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                     const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
                     const PopupMenuItem(value: 'Cancelled', child: Text('Cancel')),
                   ],
-                  child: const Chip(
-                    label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
-                    padding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
-          ],
+                            child: const Chip(
+            label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
+            padding: EdgeInsets.zero,
+          ),
         ),
-      ),
-    );
+      ],
+    ),
+  ],
+),
 
-    );
 
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
