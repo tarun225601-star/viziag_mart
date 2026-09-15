@@ -982,32 +982,35 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                 );
               })),
 
-                        const Divider(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('स्टेटस: ${ord['status'] ?? 'Pending'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.orange)),
-                PopupMenuButton<String>(
-                  onSelected: (newStatus) {
-                    _updateStatus(ord['firebaseKey'], newStatus);
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'Pending', child: Text('Pending')),
-                    const PopupMenuItem(value: 'Accepted', child: Text('Accept')),
-                    const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
-                    const PopupMenuItem(value: 'Cancelled', child: Text('Cancel')),
-                  ],
-                            child: const Chip(
-            label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
-            padding: EdgeInsets.zero,
+                                  const Divider(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('स्टेटस: ${ord['status'] ?? 'Pending'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              PopupMenuButton<String>(
+                onSelected: (newStatus) {
+                  _updateStatus(ord['firebaseKey'], newStatus);
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'Pending', child: Text('Pending')),
+                  const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
+                  const PopupMenuItem(value: 'Dispatched', child: Text('Dispatched')),
+                  const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
+                ],
+                child: const Chip(
+                  label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     ),
-  ],
-),
+  );
+} // Ye wala bracket _VendorOrdersTabState ke andar ke method/loop ko band karega
 
-
+// Ab yahan se agli class bilkul safe shuru hogi:
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
 
