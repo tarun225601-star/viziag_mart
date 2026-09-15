@@ -871,31 +871,82 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                     return Card(
   margin: const EdgeInsets.all(8),
   child: Padding(
-    padding: const EdgeInsets.all(8),
+    padding: const EdgeInsets.all(12),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: ord['itemImage'] != null && ord['itemImage'].toString().isNotEmpty
-              ? Image.network(ord['itemImage'], width: 50, height: 50, fit: BoxFit.cover)
-              : const Icon(Icons.fastfood, size: 40, color: Colors.green),
-          title: Text('आइटम: ${ord['itemName'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text('क्वांटिटी: ${ord['qty'] ?? '1'}'),
-          trailing: PopupMenuButton<String>(
-            onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'Pending', child: Text('Pending')),
-              const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
-              const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
-              const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
-            ],
-          ),
+        Row(
+          children: [
+            Text('📦 ${ord['orderId'] ?? 'आर्डर'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown)),
+            const Spacer(),
+            PopupMenuButton<String>(
+              onSelected: (val) => _updateStatus(ord['orderId'], val),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'Pending', child: Text('Pending')),
+                const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
+                const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
+                const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
+              ],
+            ),
+          ],
         ),
+        Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
+        Text('📍 पता: ${ord['customerAddress'] ?? ''}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
         const Divider(),
-        Text('👤 ग्राहक: ${ord['customerName'] ?? ''}'),
-        Text('📍 पता: ${ord['customerAddress'] ?? ''}'),
-      
+        const Text('🛒 आर्डर का ब्योरा (Item List):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 4),
+        if (ord['items'] != null && ord['items'] is List)
+          ...(ord['items'] as List).map((item) {
+            var m = item is Map ? item : {};
+            var imgUrl = m['image'] ?? '';
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  if (imgUrl.toString().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          imgUrl.toString(),
+                          width: 45,
+                          height: 45,
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 35, color: Colors.green),
+                        ),
+                      ),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(right: 10),
+                      child: Icon(Icons.fastfood, size: 35, color: Colors.green),
+                    ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${m['name'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text('क्वांटिटी: ${m['qty'] ?? 1}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                  if (m['price'] != null)
+                    Text('₹${m['price']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            );
+          }),
+        const Divider(),
+        Row(
+          children: [
+            Text('कुल राशि: ₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade800)),
+            const Spacer(),
+            Chip(
+              label: Text(ord['status'] ?? 'Pending', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+              backgroundColor: Colors.orange.shade100,
+            
+                    
                     
                           ],
                         ),
