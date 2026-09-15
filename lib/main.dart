@@ -925,7 +925,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
               ),
             )).toList()),
             const Divider(height: 16),
-            Row(
+                        Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('कुल राशि: ₹${ord['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
@@ -939,9 +939,6 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
     );
   }
 }
-
-
-
 
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
