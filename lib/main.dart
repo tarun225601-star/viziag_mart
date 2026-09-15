@@ -871,35 +871,40 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                     return Card(
   margin: const EdgeInsets.all(8),
   child: Padding(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.all(8),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '📦 आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text(
-              '₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', 
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
-            ),
-          ],
+        // 1. आर्डर की बेसिक जानकारी (हेडर और स्टेटस बटन)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          subtitle: Text('कुल राशि: ₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+          trailing: PopupMenuButton<String>(
+            onSelected: (val) => _updateStatus(ord['firebaseKey'] ?? ord['orderId'], val),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'Pending', child: Text('Pending')),
+              const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
+              const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
+              const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
+            ],
+          ),
         ),
-        const SizedBox(height: 6),
-        Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
-        Text('📍 पता: ${ord['customerAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
         const Divider(),
+        
+        // 2. कार्ट वाले स्ट्रक्चर के हिसाब से items लिस्ट को लूप चलाना (फोटो + नाम + क्वांटिटी)
         if (ord['items'] != null && ord['items'] is List)
           ...(ord['items'] as List).map((it) {
             var m = it is Map ? it : {};
-            var imgUrl = m['image'] ?? '';
+            var imgUrl = m['image'] ?? m['itemImage'] ?? '';
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
+                  // आइटम की छोटी वाली फोटो
                   if (imgUrl.toString().isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(right: 10),
@@ -907,24 +912,25 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                         borderRadius: BorderRadius.circular(6),
                         child: Image.network(
                           imgUrl.toString(),
-                          width: 40,
-                          height: 40,
+                          width: 45,
+                          height: 45,
                           fit: BoxFit.cover,
-                          errorBuilder: (c, e, s) => const Icon(Icons.fastfood, size: 30, color: Colors.green),
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 40, color: Colors.green),
                         ),
                       ),
                     )
                   else
                     const Padding(
                       padding: EdgeInsets.only(right: 10),
-                      child: Icon(Icons.fastfood, size: 30, color: Colors.green),
+                      child: Icon(Icons.fastfood, size: 40, color: Colors.green),
                     ),
+                  // आइटम का नाम और क्वांटिटी
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${m['name'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('क्वांटिटी: ${m['qty'] ?? 1}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -934,24 +940,13 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
               ),
             );
           }),
+        
         const Divider(),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'स्टेटस: ${ord['orderStatus'] ?? ord['status'] ?? 'Pending'}', 
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.orange),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (val) => _updateStatus(ord['orderId'] ?? ord['firebaseKey'], val),
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'Pending', child: Text('Pending')),
-                const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
-                const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
-                const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
-              
-              
-                    
+        // 3. ग्राहक का नाम और पता
+        Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
+        const SizedBox(height: 2),
+        Text('📍 पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+
                     
                           ],
                         ),
