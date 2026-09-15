@@ -982,7 +982,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                 );
               })),
 
-            const Divider(height: 16),
+                        const Divider(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1007,6 +1007,8 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
           ],
         ),
       ),
+    );
+
     );
 
 class VendorSettingsTab extends StatefulWidget {
