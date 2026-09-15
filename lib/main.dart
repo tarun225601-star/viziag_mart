@@ -932,11 +932,13 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                 Text('कुल राशि: ₹${ord['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
                 Text('स्टेटस: ${ord['status'] ?? 'Pending'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                         ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
+ }
   
 
 class VendorSettingsTab extends StatefulWidget {
