@@ -869,151 +869,29 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
                     return Card(
-  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-  child: Padding(
-    padding: const EdgeInsets.all(12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('ग्राहक: ${ord['customerName'] ?? 'Unknown'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            Text('₹${ord['totalAmount'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text('फोन: ${ord['customerPhone'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        Text('पता: ${ord['address'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        const Divider(height: 16),
-        
-        // 🟢 प्रोडक्ट्स की लिस्ट (फोटो, नाम, मात्रा और प्राइस)
-        if (ord['items'] != null)
-          ...((ord['items'] as List).map((cartItem) {
-            var product = cartItem['product'] ?? {};
-            int qty = cartItem['qty'] ?? 1;
-            String name = product['name'] ?? 'Product';
-            String unit = product['unit'] ?? 'Kg';
-            var price = product['price'] ?? 0;
-            String img = product['image'] ?? '';
-
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: buildShopOrProdImage(img, 40, 40, Icons.fastfood),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                        Text('मात्रा: $qty $unit | ₹$price x $qty', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                  Text('₹${(price * qty)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                ],
-              ),
-            );
-          })),
-
-        const Divider(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('स्टेटस: ${ord['status'] ?? 'Pending'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.orange)),
-            PopupMenuButton<String>(
-              onSelected: (newStatus) {
-                _updateStatus(ord['firebaseKey'], newStatus);
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('ग्राहक: ${ord['customerName'] ?? 'Unknown'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                Text('₹${ord['totalAmount'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text('फोन: ${ord['customerPhone'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-            Text('पता: ${ord['address'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-            const Divider(height: 16),
-            
-            // 🟢 प्रोडक्ट्स की लिस्ट (फोटो, नाम, मात्रा और प्राइस)
-            if (ord['items'] != null)
-              ...((ord['items'] as List).map((cartItem) {
-                var product = cartItem['product'] ?? {};
-                int qty = cartItem['qty'] ?? 1;
-                String name = product['name'] ?? 'Product';
-                String unit = product['unit'] ?? 'Kg';
-                var price = product['price'] ?? 0;
-                String img = product['image'] ?? '';
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: buildShopOrProdImage(img, 40, 40, Icons.fastfood),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                            Text('मात्रा: $qty $unit | ₹$price x $qty', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                      margin: const EdgeInsets.all(8),
+                      child: ListTile(
+                        title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                        subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
+                        isThreeLine: true,
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
+                            const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
+                            const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
+                            const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
                           ],
                         ),
                       ),
-                      Text('₹${(price * qty)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                    ],
-                  ),
-                );
-              })),
-
-                                  const Divider(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('स्टेटस: ${ord['status'] ?? 'Pending'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              PopupMenuButton<String>(
-                onSelected: (newStatus) {
-                  _updateStatus(ord['firebaseKey'], newStatus);
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'Pending', child: Text('Pending')),
-                  const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
-                  const PopupMenuItem(value: 'Dispatched', child: Text('Dispatched')),
-                  const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
-                ],
-                child: const Chip(
-                  label: Text('स्टेटस बदलें', style: TextStyle(fontSize: 10)),
-                  padding: EdgeInsets.zero,
-                        ),
-                ],
-              ),
-            ],
-          ),
+                    );
+                  },
+                ),
         ),
-      ),
+      ],
     );
   }
 }
-
-
-
-
 
 class VendorSettingsTab extends StatefulWidget {
   const VendorSettingsTab({super.key});
