@@ -868,85 +868,167 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemCount: allOrders.length,
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
+                    
                     return Card(
-  margin: const EdgeInsets.all(8),
+  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  elevation: 3,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(10),
+    side: BorderSide(color: Colors.grey.shade300, width: 1),
+  ),
   child: Padding(
-    padding: const EdgeInsets.all(8),
+    padding: const EdgeInsets.all(12.0),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. आर्डर की बेसिक जानकारी (हेडर और स्टेटस बटन)
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          ),
-          subtitle: Text('कुल राशि: ₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-          trailing: PopupMenuButton<String>(
-            onSelected: (val) => _updateStatus(ord['firebaseKey'] ?? ord['orderId'], val),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'Pending', child: Text('Pending')),
-              const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
-              const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
-              const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
-            ],
-          ),
+        // 1. ब्लिंकेट स्टाइल हेडर: आर्डर आईडी और टोटल अमाउंट
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.amber.shade300),
+              ),
+              child: Text(
+                '⚡ LIVE ORDER #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+              ),
+            ),
+            Text(
+              '₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green),
+            ),
+          ],
         ),
-        const Divider(),
-        
-        // 2. कार्ट वाले स्ट्रक्चर के हिसाब से items लिस्ट को लूप चलाना (फोटो + नाम + क्वांटिटी)
+        const Divider(height: 16, thickness: 1),
+
+        // 2. आइटम लिस्ट (ब्लिंकेट जैसी साफ़ फोटो, नाम और क्वांटिटी)
         if (ord['items'] != null && ord['items'] is List)
           ...(ord['items'] as List).map((it) {
             var m = it is Map ? it : {};
-            var imgUrl = m['image'] ?? m['itemImage'] ?? '';
+            var imgUrl = m['image'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? '';
+            var itemName = m['name'] ?? m['itemName'] ?? 'आइटम';
+            var itemQty = m['qty'] ?? m['quantity'] ?? '1';
+            var itemPrice = m['price'] ?? '';
+
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
               child: Row(
                 children: [
-                  // आइटम की छोटी वाली फोटो
-                  if (imgUrl.toString().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          imgUrl.toString(),
-                          width: 45,
-                          height: 45,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 40, color: Colors.green),
-                        ),
-                      ),
-                    )
-                  else
-                    const Padding(
-                      padding: EdgeInsets.only(right: 10),
-                      child: Icon(Icons.fastfood, size: 40, color: Colors.green),
-                    ),
+                  // आइटम की फोटो (लेफ्ट साइड में फिक्स साइज)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: imgUrl.toString().isNotEmpty
+                        ? Image.network(
+                            imgUrl.toString(),
+                            width: 55,
+                            height: 55,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 45, color: Colors.green),
+                          )
+                        : const Icon(Icons.fastfood, size: 45, color: Colors.green),
+                  ),
+                  const SizedBox(width: 12),
                   // आइटम का नाम और क्वांटिटी
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        Text(
+                          itemName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Qty: $itemQty',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600),
+                        ),
                       ],
                     ),
                   ),
-                  if (m['price'] != null)
-                    Text('₹${m['price']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  if (itemPrice.toString().isNotEmpty)
+                    Text(
+                      '₹$itemPrice',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54),
+                    ),
                 ],
               ),
             );
           }),
-        
-        const Divider(),
-        // 3. ग्राहक का नाम और पता
-        Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
-        const SizedBox(height: 2),
-        Text('📍 पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
 
+        const Divider(height: 16, thickness: 1),
+
+        // 3. कस्टमर की जानकारी (नाम, फोन और पूरा एड्रेस)
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.person_outline, size: 15, color: Colors.blueGrey),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${ord['customerName'] ?? 'ग्राहक'} (${ord['customerPhone'] ?? ''})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.location_on_outlined, size: 15, color: Colors.red),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं',
+                      style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 4. नीचे स्टेटस और बदलने का बटन (ब्लिंकेट एक्शन बार स्टाइल)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Text('Status: ', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  ord['orderStatus'] ?? ord['status'] ?? 'Pending',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.orange),
+                ),
+              ],
+            ),
+            PopupMenuButton<String>(
+              onSelected: (val) => _updateStatus(ord['orderId'] ?? ord['firebaseKey'], val),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'Pending', child: Text('Pending')),
+                const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
+                const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
+                const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
+              ],
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('Update Status ⚡', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+              
                     
                           ],
                         ),
