@@ -869,7 +869,8 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
                     
-                        return Card(
+                        
+      return Card(
       margin: const EdgeInsets.all(8),
       child: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -934,7 +935,6 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
         
             ),
           ],  
-      ),
         
     );
   }
