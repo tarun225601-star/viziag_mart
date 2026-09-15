@@ -1029,3 +1029,4 @@ class _VendorSettingsTabState extends State<VendorSettingsTab> {
     );
   }
 }
+                }}
