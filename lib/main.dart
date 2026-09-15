@@ -803,7 +803,7 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
   }
 }
 
-              class VendorOrdersTab extends StatefulWidget {
+ class VendorOrdersTab extends StatefulWidget {
   const VendorOrdersTab({super.key});
 
   @override
@@ -961,6 +961,8 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
     );
   }
 }
+
+                            
 
                               children: [
                                 Text('ग्राहक: ${ord['customerName']}', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold, fontSize: 14)),
