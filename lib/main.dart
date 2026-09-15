@@ -803,7 +803,7 @@ class _VendorInventoryTabState extends State<VendorInventoryTab> {
   }
 }
 
-class VendorOrdersTab extends StatefulWidget {
+              class VendorOrdersTab extends StatefulWidget {
   const VendorOrdersTab({super.key});
 
   @override
@@ -849,22 +849,27 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: _fetchOrders,
-            icon: const Icon(Icons.sync),
-            label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+              onPressed: _fetchOrders,
+              icon: const Icon(Icons.sync),
+              label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
           ),
-        ),
-        if (isLoading) const LinearProgressIndicator(color: Colors.green),
-        Expanded(
-          child: allOrders.isEmpty
-              ? const Center(child: Text('कोई आर्डर नहीं आया है', style: TextStyle(color: Colors.grey)))
+          if (isLoading) const LinearProgressIndicator(color: Colors.green),
+          allOrders.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(40.0),
+                  child: Center(child: Text('कोई आर्डर नहीं आया है', style: TextStyle(color: Colors.grey))),
+                )
               : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   itemCount: allOrders.length,
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
@@ -887,7 +892,6 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                             Text('मोबाइल: ${ord['customerPhone']} | पता: ${ord['customerAddress']}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                             const Divider(height: 12),
                             
-                            // 🟢 यहाँ आर्डर किए गए सभी आइटम्स (नाम, मात्रा और फोटो) दिखेंगे
                             ...items.map((cartItem) {
                               var product = cartItem['product'] ?? {};
                               int qty = cartItem['qty'] ?? 1;
@@ -952,11 +956,77 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                     );
                   },
                 ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
+
+                              children: [
+                                Text('ग्राहक: ${ord['customerName']}', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold, fontSize: 14)),
+                                const Spacer(),
+                                Text('₹${ord['grandTotal']?.toInt()}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.black87)),
+                              ],
+                            ),
+                            Text('मोबाइल: ${ord['customerPhone']} | पता: ${ord['customerAddress']}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            const Divider(height: 12),
+                            
+                            // 🟢 यहाँ आर्डर किए गए सभी आइटम्स (नाम, मात्रा और फोटो) दिखेंगे
+                            ...items.map((cartItem) {
+                              var product = cartItem['product'] ?? {};
+                              int qty = cartItem['qty'] ?? 1;
+                              String name = product['name'] ?? 'Item';
+                              String unit = product['unit'] ?? 'Kg';
+                              var price = product['price'] ?? 0;
+                              String img = product['image'] ?? '';
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: buildShopOrProdImage(img, 40, 40, Icons.fastfood),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                          Text('मात्रा: $qty $unit | ₹$price x $qty', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                        ],
+                                      ),
+                                    ),
+                                    Text('₹${(price * qty)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ],
+                                ),
+                              );
+                            }),
+
+                            const Divider(height: 12),
+                            Row(
+                              children: [
+                                Text('स्टेटस: ${ord['status']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87)),
+                                const Spacer(),
+                                PopupMenuButton<String>(
+                                  onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(6)),
+                                    child: const Row(
+                                      children: [
+                                        Text('स्टेटस बदलें', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                                        Icon(Icons.arrow_drop_down, size: 16, color: Colors.green),
+                                      ],
+                                    ),
+                                  ),
+                                  itemBuilder: (context) => [
+                                    const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
+                                    const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
+                                    const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
+                                    const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
+
 
 
 class VendorSettingsTab extends StatefulWidget {
