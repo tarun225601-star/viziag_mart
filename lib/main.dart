@@ -869,18 +869,34 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
                     return Card(
-                      margin: const EdgeInsets.all(8),
-                      child: ListTile(
-                        title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
-                        subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
-                        isThreeLine: true,
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
-                            const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
-                            const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
-                            const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
+  margin: const EdgeInsets.all(8),
+  child: Padding(
+    padding: const EdgeInsets.all(8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: ord['itemImage'] != null && ord['itemImage'].toString().isNotEmpty
+              ? Image.network(ord['itemImage'], width: 50, height: 50, fit: BoxFit.cover)
+              : const Icon(Icons.fastfood, size: 40, color: Colors.green),
+          title: Text('आइटम: ${ord['itemName'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text('क्वांटिटी: ${ord['qty'] ?? '1'}'),
+          trailing: PopupMenuButton<String>(
+            onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'Pending', child: Text('Pending')),
+              const PopupMenuItem(value: 'Accepted', child: Text('Accepted')),
+              const PopupMenuItem(value: 'Delivered', child: Text('Delivered')),
+              const PopupMenuItem(value: 'Cancelled', child: Text('Cancelled')),
+            ],
+          ),
+        ),
+        const Divider(),
+        Text('👤 ग्राहक: ${ord['customerName'] ?? ''}'),
+        Text('📍 पता: ${ord['customerAddress'] ?? ''}'),
+      
+                    
                           ],
                         ),
                       ),
