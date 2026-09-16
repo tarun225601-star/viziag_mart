@@ -900,16 +900,19 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
-                children: [
-                  // फोटो दिखाने का पक्का प्रबंध
-                                      ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: buildShopOrProdImage(
-                        m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
+                                    children: [
+                      // फोटो दिखाने का पक्का प्रबंध
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: buildShopOrProdImage(
+                          m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
                         50,
                         50,
+                        Icons.fastfood,
                       ),
                     ),
+                  ],
+
 
 
                   else
