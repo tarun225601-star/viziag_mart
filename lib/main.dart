@@ -908,14 +908,17 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(6),
                         child: Image.network(
-                          imgUrl.toString(),
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 40, color: Colors.green),
-                        ),
-                      ),
-                    )
+                          buildShopOrProdImage(
+  m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
+  50,
+  50,
+  BoxFit.cover,
+  errorBuilder: (context, error, stackTrace) => const Padding(
+    padding: EdgeInsets.all(8.0),
+    child: Icon(Icons.fastfood, color: Colors.grey),
+  ),
+)
+
                   else
                     const Padding(
                       padding: EdgeInsets.only(right: 10),
