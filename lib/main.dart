@@ -897,11 +897,10 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
             // यहाँ सभी संभावित इमेज कीज़ को चेक कर रहे हैं ताकि फोटो मिस न हो
             var imgUrl = m['image'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? '';
             
-                return Padding(
+                    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
-          // फोटो दिखाने का पक्का प्रबंध
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: buildShopOrProdImage(
@@ -911,23 +910,21 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
               Icons.fastfood,
             ),
           ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
 
-
-                  else
-                    const Padding(
-                      padding: EdgeInsets.only(right: 10),
-                      child: Icon(Icons.fastfood, size: 40, color: Colors.green),
-                    ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
+            
                   if (m['price'] != null)
                     Text('₹${m['price']}', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
