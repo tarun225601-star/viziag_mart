@@ -897,22 +897,21 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
             // यहाँ सभी संभावित इमेज कीज़ को चेक कर रहे हैं ताकि फोटो मिस न हो
             var imgUrl = m['image'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? '';
             
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                                    children: [
-                      // फोटो दिखाने का पक्का प्रबंध
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: buildShopOrProdImage(
-                          m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
-                        50,
-                        50,
-                        Icons.fastfood,
-                      ),
-                    ),
-                  ],
-
+                return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          // फोटो दिखाने का पक्का प्रबंध
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: buildShopOrProdImage(
+              m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
+              50,
+              50,
+              Icons.fastfood,
+            ),
+          ),
+        ],
 
 
                   else
