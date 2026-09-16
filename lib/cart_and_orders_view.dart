@@ -187,6 +187,7 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
                                       45,
                                       45,
                                     Icons.fastfood,
+                                       ),                                     
 
                                     ),
                                     title: Text(item['name'] ?? 'Item', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
