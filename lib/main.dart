@@ -870,6 +870,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                     var ord = allOrders[index];
                     
               
+                  
                   return Card(
   margin: const EdgeInsets.all(8),
   child: Padding(
@@ -894,37 +895,40 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
         if (ord['items'] != null && ord['items'] is List)
           ...(ord['items'] as List).map((it) {
             var m = it is Map ? it : {};
-            // यहाँ सभी संभावित इमेज कीज़ को चेक कर रहे हैं ताकि फोटो मिस न हो
-            var imgUrl = m['image'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? '';
+            var imgUrl = m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'] ?? '';
             
-                    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: buildShopOrProdImage(
-              m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
-              50,
-              50,
-              Icons.fastfood,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-            
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  if (imgUrl.toString().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          imgUrl.toString(),
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 40, color: Colors.green),
+                        ),
+                      ),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(right: 10),
+                      child: Icon(Icons.fastfood, size: 40, color: Colors.green),
+                    ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
+                    ),
+                  ),
                   if (m['price'] != null)
                     Text('₹${m['price']}', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
@@ -935,6 +939,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
         Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
         const SizedBox(height: 2),
         Text('📍 पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+    
       
 
                     
