@@ -902,22 +902,15 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
               child: Row(
                 children: [
                   // फोटो दिखाने का पक्का प्रबंध
-                  if (imgUrl.toString().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          buildShopOrProdImage(
-  m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
-  50,
-  50,
-  BoxFit.cover,
-  errorBuilder: (context, error, stackTrace) => const Padding(
-    padding: EdgeInsets.all(8.0),
-    child: Icon(Icons.fastfood, color: Colors.grey),
-  ),
-)
+                                      ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: buildShopOrProdImage(
+                        m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'],
+                        50,
+                        50,
+                      ),
+                    ),
+
 
                   else
                     const Padding(
