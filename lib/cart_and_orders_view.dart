@@ -182,7 +182,12 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
                                   child: ListTile(
                                     leading: ClipRRect(
                                       borderRadius: BorderRadius.circular(6),
-                                      child: buildShopOrProdImage(item['image'], 45, 45, Icons.fastfood),
+                                                                          child: buildShopOrProdImage(
+                                      item['image'] ?? item['imageUrl'] ?? item['itemImage'] ?? item['photo'] ?? item['img'] ?? item['productImage'],
+                                      45,
+                                      45,
+                                    Icons.fastfood,
+
                                     ),
                                     title: Text(item['name'] ?? 'Item', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                     subtitle: Text('₹${item['price']} x ${item['qty']} ${item['unit'] ?? ''}'),
