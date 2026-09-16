@@ -985,26 +985,21 @@ class _VendorSettingsTabState extends State<VendorSettingsTab> {
             children: [
         // 🟢 यह रहा नया बैंक सेटिंग्स वाला कार्ड (इसे यहाँ डालें)
         Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          child: ListTile(
-            leading: const Icon(Icons.account_balance, color: Colors.green, size: 28),
-            title: const Text('बैंक खाता विवरण (Bank Details)', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('अकाउंट नंबर और IFSC कोड मैनेज करें'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const VendorBankSettingsView()),
-              );
-            },
-          ),
-        ),
+  margin: const EdgeInsets.symmetric(vertical: 8),
+  child: ListTile(
+    leading: const Icon(Icons.account_balance, color: Colors.green, size: 28),
+    title: const Text('बैंक खाता विवरण (Bank Details)', style: TextStyle(fontWeight: FontWeight.bold)),
+    subtitle: const Text('अकाउंट नंबर और IFSC कोड मैनेज करें'),
+    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const VendorBankSettingsView()),
+      );
+    },
+  ),
+),
 
-        // इसके बाद तेरा पुराना वाला कार्ड शुरू होगा:
-        Card(
-          color: isOpen ? Colors.green.shade50 : Colors.red.shade50,
-          child: SwitchListTile(
-            // ... (तेरा पुराना कोड यहाँ से आगे जारी रहेगा)
             
         Card(
           color: isOpen ? Colors.green.shade50 : Colors.red.shade50,
