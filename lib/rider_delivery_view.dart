@@ -528,4 +528,4 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-      भाई राइडर वाले कोड में तो डिलीवर होते ही अपने आप ही हट जाते हैं आइटम लेकिन वेंडर वाले में नहीं हटते लेकिन इसमें मेरा नेट बहुत खर्च हो रहा है ध्यान कर लेना पूरा 50% चुटकियों में उड़ गया नेट
+      
