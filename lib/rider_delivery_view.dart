@@ -32,7 +32,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
 
   Timer? _smartPollingTimer;
   Set<String> _localSeenOrderIds = {};
-  Map<String, String> _lastKnownOrderStatuses = {}; // 🚀 डेटा बचाने और बदलाव ट्रैक करने के लिए
   bool _isFirstLoad = true;
 
   @override
@@ -66,32 +65,25 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     super.dispose();
   }
 
-  // 🚀 सुपर-फास्ट और डेटा बचाने वाला स्मार्ट चेकर (दौड़ेगा 1 सेकंड से भी तेज)
   void _startSmartOrderChecker() {
-    _fetchAllActiveOrdersRest();
+    _fetchAllActiveOrdersRest(isInitial: true);
     
-    _smartPollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+    _smartPollingTimer = Timer.periodic(const Duration(seconds: 6), (timer) async {
       if (!_isLoggedIn || _isAdminLoggedIn) return;
       try {
-        // 🔥 जादुई ट्रिक: ?shallow=true से सिर्फ IDs और स्टेटस आएंगे, पूरा डेटा नहीं (Net 0% खर्च)
         final response = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json?shallow=true'));
         if (response.statusCode == 200 && response.body != 'null') {
-          Map<String, dynamic> rawData = json.decode(response.body);
+          Map<String, dynamic> data = json.decode(response.body);
           
-          bool needsRefresh = false;
-          if (rawData.keys.length != _lastKnownOrderStatuses.length) {
-            needsRefresh = true;
-          } else {
-            for (String serverId in rawData.keys) {
-              if (!_lastKnownOrderStatuses.containsKey(serverId)) {
-                needsRefresh = true;
-                break;
-              }
+          bool hasNewOrder = false;
+          for (String serverId in data.keys) {
+            if (!_localSeenOrderIds.contains(serverId)) {
+              hasNewOrder = true;
+              break;
             }
           }
 
-          // अगर कुछ नया आया या बदला है, तभी सर्वर से पूरा डेटा खींचो!
-          if (!_isFirstLoad && needsRefresh) {
+          if (!_isFirstLoad && hasNewOrder) {
             HapticFeedback.heavyImpact();
             if (mounted) {
               ScaffoldMessenger.of(context).removeCurrentSnackBar();
@@ -99,11 +91,11 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                 const SnackBar(
                   content: Text('⚡ 🚴‍♂️ नया डिलीवरी ऑर्डर प्राप्त हुआ है!'),
                   backgroundColor: Colors.green,
-                  duration: Duration(seconds: 3),
+                  duration: Duration(seconds: 4),
                 ),
               );
             }
-            _fetchAllActiveOrdersRest();
+            _fetchAllActiveOrdersRest(isInitial: false);
           }
         }
       } catch (e) {
@@ -112,13 +104,12 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     });
   }
 
-  Future<void> _fetchAllActiveOrdersRest() async {
+  Future<void> _fetchAllActiveOrdersRest({bool isInitial = false}) async {
     try {
       final response = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
       if (response.statusCode == 200 && response.body != 'null') {
         Map<String, dynamic> data = json.decode(response.body);
         List<Map<String, dynamic>> loadedOrders = [];
-        _lastKnownOrderStatuses.clear();
 
         data.forEach((key, value) {
           if (value is Map) {
@@ -127,11 +118,8 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             _localSeenOrderIds.add(key);
 
             String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
-            
-            // 🛑 डिलीवर हो चुके ऑर्डर्स को सीधे बाहर कर दो ताकि स्क्रीन और डेटा दोनों साफ़ रहें
             if (!status.toLowerCase().contains('delivered')) {
               loadedOrders.add(order);
-              _lastKnownOrderStatuses[key] = status;
             }
           }
         });
@@ -321,7 +309,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       try {
         await http.delete(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$orderId.json'));
         _localSeenOrderIds.remove(orderId);
-        _lastKnownOrderStatuses.remove(orderId);
         _saveSeenOrderIds();
         HapticFeedback.mediumImpact();
         _showMsg('🗑️ आर्डर हमेशा के लिए डिलीट कर दिया गया!', Colors.red);
@@ -485,6 +472,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                 String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
                 String phone = order['customerPhone'] ?? order['phone'] ?? '';
                 
+                // 📍 पिकअप और डिलीवरी एड्रेस
                 String shopAddress = order['shopAddress'] ?? 'Sector 89A Ajronda Sabji Mandi Faridabad';
                 String deliveryAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
                 
@@ -540,85 +528,4 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        // यहाँ बाकी UI / बटन जोड़ सकते हो जैसे स्टेटस अपडेट करने के लिए
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-
-  Widget _buildLoginForm() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _phoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', prefixIcon: Icon(Icons.phone)),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड', prefixIcon: Icon(Icons.lock)),
-        ),
-        const SizedBox(height: 20),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
-          onPressed: _isLoading ? null : _loginRider,
-          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('लॉगिन करें'),
-        ),
-        const SizedBox(height: 10),
-        TextButton(
-          onPressed: () => setState(() => _isRegistering = true),
-          child: const Text('नया राइडर रजिस्ट्रेशन करें'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRegisterForm() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _regNameController,
-          decoration: const InputDecoration(labelText: 'पूरा नाम', prefixIcon: Icon(Icons.person)),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _regPhoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', prefixIcon: Icon(Icons.phone)),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _regVehicleController,
-          decoration: const InputDecoration(labelText: 'वाहन का नाम/नंबर (Bike/Scooty)', prefixIcon: Icon(Icons.directions_bike)),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _regPasswordController,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', prefixIcon: Icon(Icons.lock)),
-        ),
-        const SizedBox(height: 20),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
-          onPressed: _isLoading ? null : _registerRider,
-          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('रजिस्टर करें'),
-        ),
-        const SizedBox(height: 10),
-        TextButton(
-          onPressed: () => setState(() => _isRegistering = false),
-          child: const Text('वापस लॉगिन पर जाएं'),
-        ),
-      ],
-    );
-  }
-}
+      भाई राइडर वाले कोड में तो डिलीवर होते ही अपने आप ही हट जाते हैं आइटम लेकिन वेंडर वाले में नहीं हटते लेकिन इसमें मेरा नेट बहुत खर्च हो रहा है ध्यान कर लेना पूरा 50% चुटकियों में उड़ गया नेट
