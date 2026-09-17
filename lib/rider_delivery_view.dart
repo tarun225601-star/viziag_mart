@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import 'package:firebase_database/firebase_database.dart'; // 👈 रियल-टाइम लिसनर के लिए
 import 'package:shared_preferences/shared_preferences.dart';
 import 'database_models.dart';
 
@@ -30,6 +30,10 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   List<Map<String, dynamic>> _pendingRiders = [];
   Set<String> _localSeenOrderIds = {};
 
+  // 🔥 फायरबेस लिसनर को होल्ड करने के लिए
+  DatabaseReference? _ordersRef;
+  var _ordersSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +55,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
 
   @override
   void dispose() {
+    _ordersSubscription?.cancel();
     _phoneController.dispose();
     _passwordController.dispose();
     _regNameController.dispose();
@@ -60,12 +65,32 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     super.dispose();
   }
 
-  // 🟢 डेटा बचाने वाला REST फेच (बिना किसी टाइमर/लूप के)
-  Future<void> _fetchAllActiveOrdersRest() async {
-    try {
-      final response = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
-      if (response.statusCode == 200 && response.body != 'null') {
-        Map<String, dynamic> data = json.decode(response.body);
+  // 🚨 नया आर्डर आते ही जबरदस्त वाइब्रेशन और अलर्ट
+  void _triggerNewOrderAlert() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      HapticFeedback.vibrate();
+    });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🚨 नया डिलीवरी आर्डर आ गया है भाई!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  // ⚡ सबसे भारी डेटा-बचत सिस्टम: सिर्फ नया जुड़ने वाला आर्डर सुनेगा (पुराने से कोई मतलब नहीं)
+  void _listenToNewOrdersOnly() {
+    _ordersRef = FirebaseDatabase.instance.ref().child('orders');
+
+    // पहले एक बार पुरानी लिस्ट लोड कर लो जो डिलीवर नहीं हुई हैं
+    _ordersRef!.get().then((snapshot) {
+      if (snapshot.exists && snapshot.value != null) {
+        Map<String, dynamic> data = Map<String, dynamic>.from(snapshot.value as Map);
         List<Map<String, dynamic>> loadedOrders = [];
 
         data.forEach((key, value) {
@@ -89,18 +114,43 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             _activeOrders = loadedOrders;
           });
         }
-      } else {
-        if (mounted) {
-          setState(() {
-            _activeOrders = [];
-          });
+      }
+    });
+
+    // अब सिर्फ नए जुड़ने वाले ऑर्डर्स पर नजर रखेगा (बिना पूरा डेटा बार-बार डाउनलोड किए)
+    _ordersSubscription = _ordersRef!.onChildAdded.listen((event) {
+      final snapshot = event.snapshot;
+      if (snapshot.exists && snapshot.value != null) {
+        String newOrderId = snapshot.key ?? '';
+        
+        if (newOrderId.isNotEmpty && !_localSeenOrderIds.contains(newOrderId)) {
+          var value = snapshot.value;
+          if (value is Map) {
+            var order = Map<String, dynamic>.from(value);
+            order['orderId'] = newOrderId;
+
+            String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
+
+            if (!status.toLowerCase().contains('delivered')) {
+              _localSeenOrderIds.add(newOrderId);
+              _saveSeenOrderIds();
+
+              if (mounted) {
+                setState(() {
+                  _activeOrders.insert(0, order); // नया आर्डर सबसे ऊपर दिखेगा
+                });
+                _triggerNewOrderAlert(); // घंटी बजेगी
+              }
+            }
+          }
         }
       }
-    } catch (e) {
-      debugPrint("Rest order fetch error: $e");
-    }
+    }, onError: (error) {
+      debugPrint("Firebase Child Added Error: $error");
+    });
   }
 
+  // 👑 राइडर या एडमिन लॉगिन (tarun#1 से एडमिन पैनल खुलेगा)
   Future<void> _loginRider() async {
     String phone = _phoneController.text.trim();
     String password = _passwordController.text.trim();
@@ -122,9 +172,11 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/riders.json'));
-      if (response.statusCode == 200 && response.body != 'null') {
-        Map<String, dynamic> data = json.decode(response.body);
+      final DatabaseReference ridersRef = FirebaseDatabase.instance.ref().child('riders');
+      final snapshot = await ridersRef.get();
+
+      if (snapshot.exists && snapshot.value != null) {
+        Map<String, dynamic> data = Map<String, dynamic>.from(snapshot.value as Map);
         bool found = false;
         bool approved = false;
 
@@ -144,7 +196,9 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             _isLoading = false;
           });
           _showMsg('🎉 राइडर लॉगिन सफल!', Colors.green);
-          _fetchAllActiveOrdersRest();
+          
+          // 🔥 लॉगिन होते ही डेटा-बचत वाला लाइव लिसनर चालू हो जाएगा!
+          _listenToNewOrdersOnly();
         } else if (found && !approved) {
           setState(() => _isLoading = false);
           _showMsg('⏳ आपका अकाउंट अभी एडमिन द्वारा अप्रूव नहीं किया गया है!', Colors.orange);
@@ -175,28 +229,21 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse('${CakeDatabase.firebaseRestUrl}/riders.json'),
-        body: json.encode({
-          'name': name,
-          'phone': phone,
-          'vehicle': vehicle,
-          'password': password,
-          'isApproved': false,
-          'createdAt': DateTime.now().toIso8601String(),
-        }),
-      );
+      final DatabaseReference ridersRef = FirebaseDatabase.instance.ref().child('riders');
+      await ridersRef.push().set({
+        'name': name,
+        'phone': phone,
+        'vehicle': vehicle,
+        'password': password,
+        'isApproved': false,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
 
-      if (response.statusCode == 200) {
-        setState(() {
-          _isLoading = false;
-          _isRegistering = false;
-        });
-        _showMsg('✅ रजिस्ट्रेशन सफल! एडमिन अप्रूवल के बाद ही लॉगिन कर सकेंगे।', Colors.green);
-      } else {
-        setState(() => _isLoading = false);
-        _showMsg('रजिस्ट्रेशन फेल हुआ!', Colors.red);
-      }
+      setState(() {
+        _isLoading = false;
+        _isRegistering = false;
+      });
+      _showMsg('✅ रजिस्ट्रेशन सफल! एडमिन अप्रूवल के बाद ही लॉगिन कर सकेंगे।', Colors.green);
     } catch (e) {
       setState(() => _isLoading = false);
       _showMsg('रजिस्ट्रेशन एरर: $e', Colors.red);
@@ -206,9 +253,10 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   Future<void> _fetchPendingRidersRest() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/riders.json'));
-      if (response.statusCode == 200 && response.body != 'null') {
-        Map<String, dynamic> data = json.decode(response.body);
+      final DatabaseReference ridersRef = FirebaseDatabase.instance.ref().child('riders');
+      final snapshot = await ridersRef.get();
+      if (snapshot.exists && snapshot.value != null) {
+        Map<String, dynamic> data = Map<String, dynamic>.from(snapshot.value as Map);
         List<Map<String, dynamic>> list = [];
         data.forEach((key, value) {
           if (value is Map) {
@@ -230,10 +278,8 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
 
   Future<void> _approveRider(String riderId) async {
     try {
-      await http.patch(
-        Uri.parse('${CakeDatabase.firebaseRestUrl}/riders/$riderId.json'),
-        body: json.encode({'isApproved': true}),
-      );
+      final DatabaseReference riderRef = FirebaseDatabase.instance.ref().child('riders/$riderId');
+      await riderRef.update({'isApproved': true});
       _showMsg('✅ राइडर सक्सेसफुली अप्रूव हो गया!', Colors.green);
       _fetchPendingRidersRest();
     } catch (e) {
@@ -247,21 +293,77 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
+  // 🚚 ऑर्डर स्टेटस बदलना
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
     try {
-      await http.patch(
-        Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$orderId.json'),
-        body: json.encode({
-          'orderStatus': newStatus,
-          'status': newStatus,
-        }),
-      );
+      final DatabaseReference orderRef = FirebaseDatabase.instance.ref().child('orders/$orderId');
+      await orderRef.update({
+        'orderStatus': newStatus,
+        'status': newStatus,
+      });
       HapticFeedback.mediumImpact();
       _showMsg('✅ आर्डर स्टेटस बदलकर "$newStatus" कर दिया गया!', Colors.green);
-      _fetchAllActiveOrdersRest();
+      
+      // लिस्ट से तुरंत हटा दो या अपडेट कर दो
+      setState(() {
+        _activeOrders.removeWhere((order) => order['orderId'] == orderId);
+      });
     } catch (e) {
       debugPrint("Status update error: $e");
     }
+  }
+
+  void _makePhoneCall(String phone) {
+    if (phone.isEmpty) {
+      _showMsg('ग्राहक का फोन नंबर उपलब्ध नहीं है!', Colors.orange);
+      return;
+    }
+    _showMsg('कॉलिंग फीचर: $phone', Colors.blue);
+  }
+
+  // 📋 पूरी डिटेल देखने वाला पॉप-अप
+  void _showOrderDetailsDialog(Map<String, dynamic> order) {
+    String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
+    String phone = order['customerPhone'] ?? order['phone'] ?? '';
+    String address = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
+    String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (मुख्य शाखा)';
+    String itemsText = order['itemsSummary'] ?? order['items'] ?? 'आइटम विवरण नहीं';
+    String amount = order['totalAmount'] ?? order['amount'] ?? 'लागू नहीं';
+    String paymentMode = order['paymentMode'] ?? order['paymentType'] ?? 'COD';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('📦 ऑर्डर विवरण: $customerName'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🏬 पिकअप (शॉप एड्रेस):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+              Text(shopAddress),
+              const Divider(),
+              const Text('📍 डिलीवरी (ग्राहक का पता):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+              Text(address),
+              const Divider(),
+              Text('📞 मोबाइल नंबर: $phone'),
+              const SizedBox(height: 6),
+              Text('🛒 आइटम्स: $itemsText'),
+              const SizedBox(height: 6),
+              Text('💰 कुल राशि: ₹$amount'),
+              const SizedBox(height: 6),
+              Text('💳 पेमेंट मोड: $paymentMode'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('बंद करें'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLoginForm() {
@@ -280,7 +382,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
         TextField(
           controller: _passwordController,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड (या एडमिन पासवर्ड)', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'पासवर्ड (या एडमिन tarun#1)', border: OutlineInputBorder()),
         ),
         const SizedBox(height: 16),
         ElevatedButton(
@@ -378,6 +480,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.red),
               onPressed: () {
+                _ordersSubscription?.cancel();
                 setState(() { _isLoggedIn = false; _isAdminLoggedIn = false; });
               },
               tooltip: 'लॉग आउट',
@@ -416,116 +519,132 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: const Text('🚴‍♂️ राइडर डिलीवरी ऑर्डर्स', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
+        title: const Text('🚴‍♂️ राइडर लाइव ऑर्डर्स', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.green),
-            onPressed: () {
-              _fetchAllActiveOrdersRest();
-              _showMsg('🔄 ऑर्डर रिफ्रेश हो रहे हैं...', Colors.green);
-            },
-            tooltip: 'रफ्रेश करें',
-          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
             onPressed: () {
+              _ordersSubscription?.cancel();
               setState(() => _isLoggedIn = false);
             },
             tooltip: 'लॉग आउट',
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _fetchAllActiveOrdersRest,
-        child: _activeOrders.isEmpty
-            ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
+      body: _activeOrders.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.delivery_dining, size: 70, color: Colors.grey.shade400),
-                          const SizedBox(height: 12),
-                          const Text('कोई नया डिलीवरी ऑर्डर उपलब्ध नहीं है!', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
-                          const SizedBox(height: 8),
-                          const Text('(ऊपर से नीचे स्क्रीन खींचकर या रिफ्रेश बटन दबाकर चेक करें)', style: TextStyle(fontSize: 11, color: Colors.green), textAlign: TextAlign.center),
-                        ],
-                      ),
+                  Icon(Icons.delivery_dining, size: 70, color: Colors.grey.shade400),
+                  const SizedBox(height: 12),
+                  const Text('कोई नया डिलीवरी ऑर्डर नहीं है!', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+                  const SizedBox(height: 6),
+                  const Text('📡 (सुपर फास्ट डेटा-सेविंग मोड ऑन है)', style: TextStyle(fontSize: 11, color: Colors.green), textAlign: TextAlign.center),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: _activeOrders.length,
+              itemBuilder: (context, index) {
+                var order = _activeOrders[index];
+                String orderId = order['orderId'] ?? '';
+                String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
+                String phone = order['customerPhone'] ?? order['phone'] ?? '';
+                String deliveryAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
+                String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (पिकअप)';
+                String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
+                String itemsText = order['itemsSummary'] ?? order['items'] ?? 'आइटम की जानकारी उपलब्ध नहीं';
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text('👤 $customerName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: status.toLowerCase().contains('out') ? Colors.orange.shade100 : Colors.green.shade100,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(status, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: status.toLowerCase().contains('out') ? Colors.orange.shade800 : Colors.green.shade800)),
+                            ),
+                          ],
+                        ),
+                        const Divider(),
+                        Row(
+                          children: [
+                            const Icon(Icons.store, size: 14, color: Colors.blue),
+                            const SizedBox(width: 4),
+                            Expanded(child: Text('पिकअप: $shopAddress', style: const TextStyle(fontSize: 12, color: Colors.blueGrey))),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on, size: 14, color: Colors.red),
+                            const SizedBox(width: 4),
+                            Expanded(child: Text('डिलीवरी: $deliveryAddress', style: const TextStyle(fontSize: 12, color: Colors.black87))),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text('📞 मोबाइल: $phone', style: const TextStyle(fontSize: 13)),
+                        const SizedBox(height: 4),
+                        Text('🛒 आर्डर डिटेल: $itemsText', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        const SizedBox(height: 8),
+                        
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.blue, padding: const EdgeInsets.symmetric(horizontal: 8)),
+                              onPressed: () => _makePhoneCall(phone),
+                              icon: const Icon(Icons.phone, size: 14),
+                              label: const Text('कॉल', style: TextStyle(fontSize: 11)),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.purple, padding: const EdgeInsets.symmetric(horizontal: 8)),
+                              onPressed: () => _showOrderDetailsDialog(order),
+                              icon: const Icon(Icons.info_outline, size: 14),
+                              label: const Text('पूरी डिटेल', style: TextStyle(fontSize: 11)),
+                            ),
+                          ],
+                        ),
+
+                        const Divider(),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.orange),
+                              onPressed: () => _updateOrderStatus(orderId, 'Out for Delivery'),
+                              icon: const Icon(Icons.delivery_dining, size: 16),
+                              label: const Text('Out for Delivery', style: TextStyle(fontSize: 11)),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                              onPressed: () => _updateOrderStatus(orderId, 'Delivered'),
+                              icon: const Icon(Icons.check, size: 16),
+                              label: const Text('Delivered', style: TextStyle(fontSize: 11)),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              )
-            : ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(12),
-                itemCount: _activeOrders.length,
-                itemBuilder: (context, index) {
-                  var order = _activeOrders[index];
-                  String orderId = order['orderId'] ?? '';
-                  String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
-                  String phone = order['customerPhone'] ?? order['phone'] ?? '';
-                  String deliveryAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
-                  String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
-                  String itemsText = order['itemsSummary'] ?? order['items'] ?? 'आइटम की जानकारी उपलब्ध नहीं';
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text('👤 $customerName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: status.toLowerCase().contains('out') ? Colors.orange.shade100 : Colors.green.shade100,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(status, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: status.toLowerCase().contains('out') ? Colors.orange.shade800 : Colors.green.shade800)),
-                              ),
-                            ],
-                          ),
-                          const Divider(),
-                          Text('📞 मोबाइल: $phone', style: const TextStyle(fontSize: 13)),
-                          const SizedBox(height: 4),
-                          Text('📍 पता: $deliveryAddress', style: const TextStyle(fontSize: 13, color: Colors.black87)),
-                          const SizedBox(height: 6),
-                          Text('🛒 आर्डर डिटेल: $itemsText', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(foregroundColor: Colors.orange),
-                                onPressed: () => _updateOrderStatus(orderId, 'Out for Delivery'),
-                                icon: const Icon(Icons.delivery_dining, size: 16),
-                                label: const Text('Out for Delivery', style: TextStyle(fontSize: 11)),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                onPressed: () => _updateOrderStatus(orderId, 'Delivered'),
-                                icon: const Icon(Icons.check, size: 16),
-                                label: const Text('Delivered', style: TextStyle(fontSize: 11)),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-      ),
+                );
+              },
+            ),
     );
   }
 }
