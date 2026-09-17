@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'firebase_messaging_helper.dart'; // 🟢 FCM नोटिफिकेशन हेल्पर इम्पोर्ट किया गया है
 import 'database_models.dart';
 
 class RiderDeliveryScreen extends StatefulWidget {
@@ -35,16 +34,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   void initState() {
     super.initState();
     _loadLocalSeenOrders();
-    
-    // 🟢 ऐप चालू होते ही बैकग्राउंड पुश नोटिफिकेशन लिसनर एक्टिव कर दिया है
-    // ताकि नया आर्डर आने पर फोन की घंटी बजे
-    FirebaseMessagingHelper.initFCM(
-      onNewOrderNotification: () {
-        if (mounted && _isLoggedIn && !_isAdminLoggedIn) {
-          _fetchAllActiveOrdersRest(); // जैसे ही नोटिफिकेशन आए, आर्डर लिस्ट ऑटोमैटिक अपडेट हो जाए
-        }
-      },
-    );
   }
 
   Future<void> _loadLocalSeenOrders() async {
@@ -427,7 +416,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: const Text('🚴‍♂️ राइडर डिलीवरी ऑर्डर्स (FMC Active)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
+        title: const Text('🚴‍♂️ राइडर डिलीवरी ऑर्डर्स', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.green),
@@ -462,7 +451,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                           const SizedBox(height: 12),
                           const Text('कोई नया डिलीवरी ऑर्डर उपलब्ध नहीं है!', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
                           const SizedBox(height: 8),
-                          const Text('(नया आर्डर आने पर पुश नोटिफिकेशन खुद आ जाएगा)', style: TextStyle(fontSize: 11, color: Colors.green), textAlign: TextAlign.center),
+                          const Text('(ऊपर से नीचे स्क्रीन खींचकर या रिफ्रेश बटन दबाकर चेक करें)', style: TextStyle(fontSize: 11, color: Colors.green), textAlign: TextAlign.center),
                         ],
                       ),
                     ),
