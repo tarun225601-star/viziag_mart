@@ -356,6 +356,84 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
+  // 👇 लॉगिन फॉर्म मेथड
+  Widget _buildLoginForm() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('राइडर लॉगिन', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _phoneController,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _passwordController,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'पासवर्ड (या एडमिन पासवर्ड)', border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
+          onPressed: _isLoading ? null : _loginRider,
+          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('लॉगिन करें'),
+        ),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: () => setState(() => _isRegistering = true),
+          child: const Text('नया राइडर रजिस्ट्रेशन करें'),
+        ),
+      ],
+    );
+  }
+
+  // 👇 रजिस्ट्रेशन फॉर्म मेथड
+  Widget _buildRegisterForm() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('नया राइडर रजिस्ट्रेशन', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _regNameController,
+          decoration: const InputDecoration(labelText: 'पूरा नाम', border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _regPhoneController,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _regVehicleController,
+          decoration: const InputDecoration(labelText: 'वाहन का नाम/नंबर (जैसे: Bike - DL 1234)', border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _regPasswordController,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
+          onPressed: _isLoading ? null : _registerRider,
+          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('रजिस्टर करें'),
+        ),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: () => setState(() => _isRegistering = false),
+          child: const Text('पहले से अकाउंट है? लॉगिन करें'),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isLoggedIn) {
@@ -472,7 +550,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                 String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
                 String phone = order['customerPhone'] ?? order['phone'] ?? '';
                 
-                // 📍 पिकअप और डिलीवरी एड्रेस
                 String shopAddress = order['shopAddress'] ?? 'Sector 89A Ajronda Sabji Mandi Faridabad';
                 String deliveryAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
                 
@@ -528,4 +605,71 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-      
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(6)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.store, size: 14, color: Colors.blue),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text('पिकअप: $shopAddress', style: const TextStyle(fontSize: 11))),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(6)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_on, size: 14, color: Colors.red),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text('ड्रॉप: $deliveryAddress', style: const TextStyle(fontSize: 11))),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('आइटम्स:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey)),
+                        ...items.map((item) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('• ${item['name'] ?? 'Item'} (x${item['quantity'] ?? 1})', style: const TextStyle(fontSize: 11)),
+                                Text('₹${(item['price'] ?? 0.0) * (item['quantity'] ?? 1)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          );
+                        }),
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('कुल: ₹$totalAmount', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
+                            Row(
+                              children: [
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(minimumSize: const Size(50, 30)),
+                                  onPressed: () => _updateOrderStatus(orderId, 'Accepted ✅'),
+                                  child: const Text('Accept', style: TextStyle(fontSize: 10)),
+                                ),
+                                const SizedBox(width: 4),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(50, 30)),
+                                  onPressed: () => _updateOrderStatus(orderId, 'Delivered ✅'),
+                                  child: const Text('Delivered', style: TextStyle(fontSize: 10)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
