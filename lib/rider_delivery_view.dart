@@ -34,7 +34,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   Timer? _orderRefreshTimer;
 
   // Firebase REST URL for direct HTTP operations (100% safe from core-no-app crash)
-  final String _firebaseRestUrl = "https://viziag-mart-default-rtdb.firebaseio.com";
+  final String _firebaseRestUrl = "https://viziagmart-default-rtdb.firebaseio.com";
 
   @override
   void initState() {
