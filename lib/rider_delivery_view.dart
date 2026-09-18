@@ -26,7 +26,8 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   final _regVehicleController = TextEditingController();
   final _regPasswordController = TextEditingController();
 
-  List<Map<String, dynamic>> _activeOrders = [];
+  // अब हम पूरी लिस्ट की जगह सिर्फ एक आखिरी आर्डर स्टोर करेंगे
+  Map<String, dynamic>? _latestOrder;
   List<Map<String, dynamic>> _pendingRiders = [];
   Set<String> _localSeenOrderIds = {};
 
@@ -83,24 +84,27 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
-  Future<void> _fetchOrdersRest() async {
+  // 🔥 यहाँ है असली जादू: सिर्फ आखिरी 1 सिंगल ऑर्डर खींचने का रेस्ट एपीआई कॉल (नेट खर्च शून्य)
+  Future<void> _fetchOnlyLatestOrderRest() async {
     try {
-      final uri = Uri.parse('$_firebaseRestUrl/orders.json');
+      // orderBy और limitToLast=1 की मदद से सर्वर सिर्फ आखिरी 1 रिकॉर्ड फेच करेगा
+      final uri = Uri.parse('$_firebaseRestUrl/orders.json?orderBy="\$key"&limitToLast=1');
       final res = await http.get(uri);
 
       if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> data = json.decode(res.body);
-        List<Map<String, dynamic>> loadedOrders = [];
+        Map<String, dynamic> decodedData = json.decode(res.body);
         bool hasNewOrder = false;
+        Map<String, dynamic>? fetchedOrder;
 
-        data.forEach((key, value) {
+        decodedData.forEach((key, value) {
           if (value is Map) {
             var order = Map<String, dynamic>.from(value);
             order['orderId'] = key;
 
             String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
+            // अगर आर्डर डिलीवर्ड नहीं हुआ है तभी दिखाएंगे
             if (!status.toLowerCase().contains('delivered')) {
-              loadedOrders.add(order);
+              fetchedOrder = order;
 
               if (!_localSeenOrderIds.contains(key)) {
                 _localSeenOrderIds.add(key);
@@ -111,11 +115,10 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
         });
 
         _saveSeenOrderIds();
-        loadedOrders = loadedOrders.reversed.toList();
 
         if (mounted) {
           setState(() {
-            _activeOrders = loadedOrders;
+            _latestOrder = fetchedOrder;
           });
 
           if (hasNewOrder) {
@@ -125,21 +128,21 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       } else {
         if (mounted) {
           setState(() {
-            _activeOrders = [];
+            _latestOrder = null;
           });
         }
       }
     } catch (e) {
-      debugPrint("Fetch orders REST error: $e");
+      debugPrint("Fetch single order REST error: $e");
     }
   }
 
-  // 🔄 यहाँ लगा हुआ है पुराना 6 सेकंड वाला लूप
+  // 🔄 6 सेकंड वाला लूप जो सिर्फ 1 सिंगल आर्डर चेक करेगा
   void _startOrderRefreshTimer() {
     _orderRefreshTimer?.cancel();
     _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
       if (mounted && _isLoggedIn && !_isAdminLoggedIn) {
-        _fetchOrdersRest();
+        _fetchOnlyLatestOrderRest();
       }
     });
   }
@@ -188,8 +191,8 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             _isAdminLoggedIn = false;
           });
           _showMsg('🎉 राइडर लॉगिन सफल!', Colors.green);
-          _fetchOrdersRest();
-          _startOrderRefreshTimer(); // 6 सेकंड का लूप यहाँ से चालू होता है
+          _fetchOnlyLatestOrderRest();
+          _startOrderRefreshTimer(); // 6 सेकंड का लाइटवेट लूप चालू
         } else if (found && !approved) {
           _showMsg('⏳ आपका अकाउंट अभी एडमिन द्वारा अप्रूव नहीं किया गया है!', Colors.orange);
         } else {
@@ -300,19 +303,11 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       _showMsg('✅ आर्डर स्टेटस बदलकर "$newStatus" कर दिया गया!', Colors.green);
       
       setState(() {
-        _activeOrders.removeWhere((order) => order['orderId'] == orderId);
+        _latestOrder = null; // आर्डर पूरा होने पर स्क्रीन साफ़
       });
     } catch (e) {
       debugPrint("Status update error: $e");
     }
-  }
-
-  void _makePhoneCall(String phone) {
-    if (phone.isEmpty) {
-      _showMsg('ग्राहक का फोन नंबर उपलब्ध नहीं है!', Colors.orange);
-      return;
-    }
-    _showMsg('कॉलिंग फीचर: $phone', Colors.blue);
   }
 
   void _showOrderDetailsDialog(Map<String, dynamic> order) {
@@ -321,7 +316,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     String address = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
     String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (मुख्य शाखा, फरीदाबाद)';
     
-    // आइटम्स लिस्ट या स्ट्रिंग को सेफली हैंडल करना
     var itemsRaw = order['items'];
     String itemsText = '';
     if (itemsRaw is List) {
@@ -521,11 +515,11 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: const Text('🚴‍♂️ राइडर लाइव ऑर्डर्स', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
+        title: const Text('🚴‍♂️ स्मार्ट लाइव ऑर्डर (Zero Data)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.green),
-            onPressed: _fetchOrdersRest,
+            onPressed: _fetchOnlyLatestOrderRest,
             tooltip: 'मैनुअल रिफ्रेश करें',
           ),
           IconButton(
@@ -539,8 +533,8 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _fetchOrdersRest,
-        child: _activeOrders.isEmpty
+        onRefresh: _fetchOnlyLatestOrderRest,
+        child: _latestOrder == null
             ? ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
@@ -552,97 +546,57 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                         children: [
                           Icon(Icons.delivery_dining, size: 70, color: Colors.grey.shade400),
                           const SizedBox(height: 12),
-                          const Text('कोई नया डिलीवरी ऑर्डर नहीं है!', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+                          const Text('फिलहाल कोई नया आर्डर नहीं है!\n(नेट खर्च बिल्कुल शून्य)', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
                         ],
                       ),
                     ),
                   ),
                 ],
               )
-            : ListView.builder(
+            : ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(12),
-                itemCount: _activeOrders.length,
-                itemBuilder: (context, index) {
-                  var order = _activeOrders[index];
-                  String orderId = order['orderId'] ?? '';
-                  String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
-                  String phone = order['customerPhone'] ?? order['phone'] ?? '';
-                  String customerAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
-                  String orderStatus = order['orderStatus'] ?? order['status'] ?? 'Pending';
-                  var grandTotal = order['grandTotal'] ?? order['totalAmount'] ?? order['amount'] ?? '0';
-
-                  return Card(
+                children: [
+                  Card(
                     elevation: 3,
-                    margin: const EdgeInsets.only(bottom: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     child: Padding(
-                      padding: const EdgeInsets.all(14.0),
+                      padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('आर्डर #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
-                              Text('₹$grandTotal',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                              const Text('🔥 एकदम नया ऑर्डर', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                              Text('₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
                             ],
                           ),
-                          const Divider(height: 16),
-                          Row(
-                            children: [
-                              const Icon(Icons.person, size: 16, color: Colors.grey),
-                              const SizedBox(width: 6),
-                              Text(customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            ],
-                          ),
+                          const Divider(height: 20),
+                          Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'N/A'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 6),
+                          Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                          const SizedBox(height: 14),
                           Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(Icons.location_on, size: 16, color: Colors.redAccent),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(customerAddress, style: const TextStyle(fontSize: 13, color: Colors.black54)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               OutlinedButton.icon(
-                                onPressed: () => _makePhoneCall(phone),
-                                icon: const Icon(Icons.phone, size: 16, color: Colors.green),
-                                label: const Text('कॉल करें', style: TextStyle(color: Colors.green, fontSize: 12)),
+                                onPressed: () => _showOrderDetailsDialog(_latestOrder!),
+                                icon: const Icon(Icons.info_outline),
+                                label: const Text('पूरी डिटेल्स'),
                               ),
-                              OutlinedButton.icon(
-                                onPressed: () => _showOrderDetailsDialog(order),
-                                icon: const Icon(Icons.visibility, size: 16, color: Colors.blue),
-                                label: const Text('विवरण', style: TextStyle(color: Colors.blue, fontSize: 12)),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                                onPressed: () => _updateOrderStatus(_latestOrder!['orderId'], 'Delivered'),
+                                child: const Text('डिलिवर्ड करें'),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                              ),
-                              onPressed: () => _updateOrderStatus(orderId, 'Delivered ✅'),
-                              child: const Text('डिलीवर हुआ घोषित करें (Delivered)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            ),
                           ),
                         ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
       ),
     );
