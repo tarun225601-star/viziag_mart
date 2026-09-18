@@ -1,9 +1,7 @@
-import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class RiderDeliveryScreen extends StatefulWidget {
   const RiderDeliveryScreen({super.key});
@@ -320,8 +318,17 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     String phone = order['customerPhone'] ?? order['phone'] ?? '';
     String address = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
     String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (मुख्य शाखा, फरीदाबाद)';
-    String itemsText = order['itemsSummary'] ?? order['items'] ?? 'आइटम विवरण नहीं';
-    String amount = order['totalAmount'] ?? order['amount'] ?? 'लागू नहीं';
+    
+    // आइटम्स लिस्ट या स्ट्रिंग को सेफली हैंडल करना
+    var itemsRaw = order['items'];
+    String itemsText = '';
+    if (itemsRaw is List) {
+      itemsText = itemsRaw.map((it) => "${it['name'] ?? 'Item'} (x${it['qty'] ?? 1})").join(', ');
+    } else {
+      itemsText = itemsRaw?.toString() ?? 'आइटम विवरण नहीं';
+    }
+
+    String amount = order['grandTotal']?.toString() ?? order['totalAmount']?.toString() ?? order['amount']?.toString() ?? '0';
     String paymentMode = order['paymentMode'] ?? order['paymentType'] ?? 'COD';
 
     showDialog(
@@ -560,75 +567,74 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                   String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
                   String phone = order['customerPhone'] ?? order['phone'] ?? '';
                   String customerAddress = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
-                  String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (मुख्य शाखा, फरीदाबाद)';
-                  String amount = order['totalAmount'] ?? order['amount'] ?? 'लागू नहीं';
                   String orderStatus = order['orderStatus'] ?? order['status'] ?? 'Pending';
+                  var grandTotal = order['grandTotal'] ?? order['totalAmount'] ?? order['amount'] ?? '0';
 
                   return Card(
-                    elevation: 2,
+                    elevation: 3,
                     margin: const EdgeInsets.only(bottom: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     child: Padding(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(14.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              Chip(
-                                label: Text(orderStatus, style: const TextStyle(color: Colors.white, fontSize: 11)),
-                                backgroundColor: Colors.orange,
-                                padding: EdgeInsets.zero,
-                              ),
+                              Text('आर्डर #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
+                              Text('₹$grandTotal',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
                             ],
                           ),
-                          const Divider(height: 12),
+                          const Divider(height: 16),
                           Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.store, size: 16, color: Colors.blue),
+                              const Icon(Icons.person, size: 16, color: Colors.grey),
                               const SizedBox(width: 6),
-                              Expanded(
-                                child: Text('पिकअप: $shopAddress', style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.w600)),
-                              ),
+                              Text(customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                             ],
                           ),
                           const SizedBox(height: 6),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.location_on, size: 16, color: Colors.red),
+                              const Icon(Icons.location_on, size: 16, color: Colors.redAccent),
                               const SizedBox(width: 6),
                               Expanded(
-                                child: Text('डिलिवरी: $customerAddress', style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                child: Text(customerAddress, style: const TextStyle(fontSize: 13, color: Colors.black54)),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text('💰 कुल राशि: ₹$amount', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13)),
-                          const Divider(height: 16),
+                          const SizedBox(height: 12),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               OutlinedButton.icon(
-                                icon: const Icon(Icons.visibility, size: 16),
-                                label: const Text('विवरण'),
-                                onPressed: () => _showOrderDetailsDialog(order),
-                              ),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
-                                icon: const Icon(Icons.phone, size: 16),
-                                label: const Text('कॉल'),
                                 onPressed: () => _makePhoneCall(phone),
+                                icon: const Icon(Icons.phone, size: 16, color: Colors.green),
+                                label: const Text('कॉल करें', style: TextStyle(color: Colors.green, fontSize: 12)),
                               ),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                onPressed: () => _updateOrderStatus(orderId, 'Delivered'),
-                                child: const Text('डिलिवर्ड'),
+                              OutlinedButton.icon(
+                                onPressed: () => _showOrderDetailsDialog(order),
+                                icon: const Icon(Icons.visibility, size: 16, color: Colors.blue),
+                                label: const Text('विवरण', style: TextStyle(color: Colors.blue, fontSize: 12)),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
+                              onPressed: () => _updateOrderStatus(orderId, 'Delivered ✅'),
+                              child: const Text('डिलीवर हुआ घोषित करें (Delivered)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            ),
                           ),
                         ],
                       ),
