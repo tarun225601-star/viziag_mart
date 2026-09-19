@@ -814,14 +814,78 @@ class VendorOrdersTab extends StatefulWidget {
 class _VendorOrdersTabState extends State<VendorOrdersTab> {
   List<Map<String, dynamic>> allOrders = [];
   bool isLoading = false;
+  String? _lastKnownLatestKey; // सबसे आखिरी वाले नए ऑर्डर की आईडी याद रखने के लिए
 
   @override
   void initState() {
     super.initState();
-    _fetchOrders();
+    _loadInitialOrders();
   }
 
-  Future<void> _fetchOrders() async {
+  // 1. राइडर स्टाइल: पहले लोकल मेमोरी से तुरंत दिखाओ (रोटी-पानी की तरह फास्ट)
+  Future<void> _loadInitialOrders() async {
+    setState(() => isLoading = true);
+    await CakeDatabase.loadOrdersLocally();
+    if (mounted) {
+      setState(() {
+        allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
+        if (allOrders.isNotEmpty) {
+          _lastKnownLatestKey = allOrders.first['firebaseKey'] ?? allOrders.first['orderId'];
+        }
+        isLoading = false;
+      });
+    }
+    // 2. राइडर जैसा 5 सेकंड वाला हल्का पोलिंग लूप शुरू करो
+    _startRiderStylePolling();
+  }
+
+  // 3. 5 सेकंड का गिनती वाला टाइमर (सिर्फ नया सिंगल ऑर्डर चेक करने के लिए)
+  void _startRiderStylePolling() {
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 5)); // 5 सेकंड की गिनती (कोई डेटा खर्च नहीं)
+      if (!mounted) return false;
+
+      try {
+        // सिर्फ सिंगल लेटेस्ट ऑर्डर चेक करने वाला मेथड (जो राइडर में भी चलता है)
+        var newOrder = await CakeDatabase.fetchSingleLatestOrderOnly();
+        
+        if (newOrder != null) {
+          String newKey = newOrder['firebaseKey'] ?? newOrder['orderId'] ?? '';
+          
+          // अगर यह आर्डर सच में नया है (यानी पुरानी लिस्ट वाले आख़िरी से मैच नहीं हुआ)
+          if (newKey.isNotEmpty && newKey != _lastKnownLatestKey) {
+            _lastKnownLatestKey = newKey;
+            
+            // लोकल मेमोरी में सबसे ऊपर जोड़कर परमानेंट सेव करो
+            CakeDatabase.localOrdersCache.insert(0, newOrder);
+            await CakeDatabase.saveOrdersLocally();
+
+            if (mounted) {
+              setState(() {
+                allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
+              });
+              
+              // घंटी या नोटिफिकेशन जैसा छोटा हिंट
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🔔 नया आर्डर आ गया और लोकल मेमोरी में सेव हो गया!'), 
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+          }
+        }
+      } catch (_) {
+        // नेटवर्क की दिक्कत होने पर भी टाइमर चुपचाप चलता रहेगा, रुकेगा नहीं
+      }
+
+      return mounted;
+    });
+  }
+
+  // मैनुअल रिफ्रेश बटन (अगर कभी पूरा रीलोड करना पड़े)
+  Future<void> _manualRefresh() async {
     setState(() => isLoading = true);
     try {
       final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
@@ -833,7 +897,16 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
           item['firebaseKey'] = key;
           list.add(item);
         });
-        setState(() => allOrders = list.reversed.toList());
+        CakeDatabase.localOrdersCache = list.reversed.toList();
+        await CakeDatabase.saveOrdersLocally();
+        if (mounted) {
+          setState(() {
+            allOrders = CakeDatabase.localOrdersCache;
+            if (allOrders.isNotEmpty) {
+              _lastKnownLatestKey = allOrders.first['firebaseKey'];
+            }
+          });
+        }
       }
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -845,7 +918,7 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
       Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
       body: json.encode({'status': newStatus}),
     );
-    _fetchOrders();
+    _manualRefresh();
   }
 
   @override
