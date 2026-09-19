@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:intl/intl.dart';
 
 class RiderDeliveryScreen extends StatefulWidget {
   const RiderDeliveryScreen({super.key});
@@ -18,6 +19,14 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   bool _isRegistering = false;
   bool _isLoading = false;
   
+  bool _isAcceptedByRider = false;
+
+  int _todayCompletedCount = 0;
+  double _todayTotalEarnings = 0.0;
+  
+  // 📦 लोकल सेव किए गए पुराने डिलीवर ऑर्डर्स की लिस्ट
+  List<Map<String, dynamic>> _deliveredHistoryList = [];
+
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -26,33 +35,75 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   final _regVehicleController = TextEditingController();
   final _regPasswordController = TextEditingController();
 
-  // अब हम पूरी लिस्ट की जगह सिर्फ एक आखिरी आर्डर स्टोर करेंगे
   Map<String, dynamic>? _latestOrder;
   List<Map<String, dynamic>> _pendingRiders = [];
   Set<String> _localSeenOrderIds = {};
 
   Timer? _orderRefreshTimer;
-
-  // 🟢 URL दोनों फाइलों में बिल्कुल एक जैसा
   final String _firebaseRestUrl = "https://viziagmart-default-rtdb.firebaseio.com";
 
   @override
   void initState() {
     super.initState();
-    _loadLocalSeenOrders();
+    _loadLocalData();
   }
 
-  Future<void> _loadLocalSeenOrders() async {
+  // 📂 लोकल मेमोरी से सीन ऑर्डर्स और पुरानी हिस्ट्री लोड करना
+  Future<void> _loadLocalData() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // सीन आर्डर आईडी
     List<String> savedIds = prefs.getStringList('seen_order_ids') ?? [];
+    
+    // पुरानी डिलीवर हिस्ट्री
+    String? historyString = prefs.getString('delivered_orders_history');
+    List<Map<String, dynamic>> loadedHistory = [];
+    if (historyString != null && historyString.isNotEmpty) {
+      try {
+        List decoded = json.decode(historyString);
+        loadedHistory = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+      } catch (e) {
+        debugPrint("History load error: $e");
+      }
+    }
+
     setState(() {
       _localSeenOrderIds = savedIds.toSet();
+      _deliveredHistoryList = loadedHistory;
+      _todayCompletedCount = loadedHistory.length; // आज या कुल डिलीवर हुए आर्डर्स की गिनती
+      
+      // कुल कमाई कैलकुलेट करना
+      double totalEarn = 0.0;
+      for (var ord in loadedHistory) {
+        double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
+        totalEarn += amt;
+      }
+      _todayTotalEarnings = totalEarn;
     });
   }
 
   Future<void> _saveSeenOrderIds() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('seen_order_ids', _localSeenOrderIds.toList());
+  }
+
+  // 💾 डिलीवर आर्डर को लोकल मेमोरी में हमेशा के लिए सेव करना
+  Future<void> _saveOrderToLocalHistory(Map<String, dynamic> order) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _deliveredHistoryList.insert(0, order); // सबसे ऊपर नया जोड़ें
+      _todayCompletedCount = _deliveredHistoryList.length;
+      
+      double totalEarn = 0.0;
+      for (var ord in _deliveredHistoryList) {
+        double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
+        totalEarn += amt;
+      }
+      _todayTotalEarnings = totalEarn;
+    });
+
+    // String में बदलकर सेव करें
+    await prefs.setString('delivered_orders_history', json.encode(_deliveredHistoryList));
   }
 
   @override
@@ -84,10 +135,27 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
-  // 🔥 यहाँ है असली जादू: सिर्फ आखिरी 1 सिंगल ऑर्डर खींचने का रेस्ट एपीआई कॉल (नेट खर्च शून्य)
-  Future<void> _fetchOnlyLatestOrderRest() async {
+  String _formatOrderTime(dynamic timestampRaw) {
+    if (timestampRaw == null) return 'समय उपलब्ध नहीं';
     try {
-      // orderBy और limitToLast=1 की मदद से सर्वर सिर्फ आखिरी 1 रिकॉर्ड फेच करेगा
+      DateTime orderTime;
+      if (timestampRaw is int) {
+        orderTime = DateTime.fromMillisecondsSinceEpoch(timestampRaw);
+      } else if (timestampRaw is String) {
+        orderTime = DateTime.parse(timestampRaw);
+      } else {
+        return 'समय उपलब्ध नहीं';
+      }
+      return DateFormat('hh:mm a (dd MMM)').format(orderTime);
+    } catch (e) {
+      return timestampRaw.toString();
+    }
+  }
+
+  Future<void> _fetchOnlyLatestOrderRest() async {
+    if (_isAcceptedByRider) return; 
+
+    try {
       final uri = Uri.parse('$_firebaseRestUrl/orders.json?orderBy="\$key"&limitToLast=1');
       final res = await http.get(uri);
 
@@ -102,7 +170,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             order['orderId'] = key;
 
             String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
-            // अगर आर्डर डिलीवर्ड नहीं हुआ है तभी दिखाएंगे
             if (!status.toLowerCase().contains('delivered')) {
               fetchedOrder = order;
 
@@ -126,7 +193,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
           }
         }
       } else {
-        if (mounted) {
+        if (mounted && !_isAcceptedByRider) {
           setState(() {
             _latestOrder = null;
           });
@@ -137,11 +204,10 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
-  // 🔄 6 सेकंड वाला लूप जो सिर्फ 1 सिंगल आर्डर चेक करेगा
   void _startOrderRefreshTimer() {
     _orderRefreshTimer?.cancel();
     _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
-      if (mounted && _isLoggedIn && !_isAdminLoggedIn) {
+      if (mounted && _isLoggedIn && !_isAdminLoggedIn && !_isAcceptedByRider) {
         _fetchOnlyLatestOrderRest();
       }
     });
@@ -192,7 +258,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
           });
           _showMsg('🎉 राइडर लॉगिन सफल!', Colors.green);
           _fetchOnlyLatestOrderRest();
-          _startOrderRefreshTimer(); // 6 सेकंड का लाइटवेट लूप चालू
+          _startOrderRefreshTimer();
         } else if (found && !approved) {
           _showMsg('⏳ आपका अकाउंट अभी एडमिन द्वारा अप्रूव नहीं किया गया है!', Colors.orange);
         } else {
@@ -290,7 +356,16 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
-  Future<void> _updateOrderStatus(String orderId, String newStatus) async {
+  void _acceptOrder() {
+    setState(() {
+      _isAcceptedByRider = true;
+    });
+    HapticFeedback.mediumImpact();
+    _showMsg('✅ आपने आर्डर स्वीकार कर लिया है! अब डिलीवरी पूरी करें।', Colors.green);
+  }
+
+  Future<void> _updateOrderStatus(Map<String, dynamic> order, String newStatus) async {
+    String orderId = order['orderId'];
     try {
       await http.patch(
         Uri.parse('$_firebaseRestUrl/orders/$orderId.json'),
@@ -300,14 +375,63 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
         }),
       );
       HapticFeedback.mediumImpact();
-      _showMsg('✅ आर्डर स्टेटस बदलकर "$newStatus" कर दिया गया!', Colors.green);
+      _showMsg('🎉 डिलीवरी सफलतापूर्वक पूरी हो गई! कमाई जुड़ गई है।', Colors.green);
       
+      // 📦 आर्डर को लोकल हिस्ट्री में सेव करें
+      order['orderStatus'] = newStatus;
+      await _saveOrderToLocalHistory(order);
+
       setState(() {
-        _latestOrder = null; // आर्डर पूरा होने पर स्क्रीन साफ़
+        _latestOrder = null; 
+        _isAcceptedByRider = false; 
       });
     } catch (e) {
       debugPrint("Status update error: $e");
     }
+  }
+
+  // 📜 पुराने डिलीवर ऑर्डर्स की हिस्ट्री देखने वाली स्क्रीन / डायलॉग
+  void _showHistoryDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('📜 पुरानी आर्डर हिस्ट्री (${_deliveredHistoryList.length})'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _deliveredHistoryList.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('अभी तक कोई पुराना डिलीवर आर्डर सेव नहीं है!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _deliveredHistoryList.length,
+                  itemBuilder: (context, index) {
+                    var ord = _deliveredHistoryList[index];
+                    String name = ord['customerName'] ?? ord['name'] ?? 'Customer';
+                    String amount = ord['grandTotal']?.toString() ?? ord['totalAmount']?.toString() ?? '0';
+                    String timeStr = _formatOrderTime(ord['timestamp'] ?? ord['createdAt'] ?? ord['time']);
+                    
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text('समय: $timeStr\nअमाउंट: ₹$amount', style: const TextStyle(fontSize: 12)),
+                        trailing: const Icon(Icons.check_circle, color: Colors.green),
+                        isThreeLine: true,
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('बंद करें'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showOrderDetailsDialog(Map<String, dynamic> order) {
@@ -315,6 +439,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     String phone = order['customerPhone'] ?? order['phone'] ?? '';
     String address = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
     String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (मुख्य शाखा, फरीदाबाद)';
+    String orderTimeStr = _formatOrderTime(order['timestamp'] ?? order['createdAt'] ?? order['time']);
     
     var itemsRaw = order['items'];
     String itemsText = '';
@@ -336,6 +461,8 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text('🕒 ऑर्डर का समय: $orderTimeStr', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+              const Divider(),
               const Text('🏬 पिकअप (शॉप एड्रेस):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
               Text(shopAddress, style: const TextStyle(fontSize: 13)),
               const Divider(),
@@ -515,8 +642,14 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: const Text('🚴‍♂️ स्मार्ट लाइव ऑर्डर (Zero Data)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
+        title: const Text('🚴‍♂️ स्मार्ट लाइव ऑर्डर (Zero Data)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 12)),
         actions: [
+          // 📜 पुरानी हिस्ट्री देखने का बटन
+          IconButton(
+            icon: const Icon(Icons.history, color: Colors.purple),
+            onPressed: _showHistoryDialog,
+            tooltip: 'पुरानी आर्डर हिस्ट्री देखें',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.green),
             onPressed: _fetchOnlyLatestOrderRest,
@@ -526,78 +659,141 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
             icon: const Icon(Icons.logout, color: Colors.red),
             onPressed: () {
               _orderRefreshTimer?.cancel();
-              setState(() => _isLoggedIn = false);
+              setState(() { _isLoggedIn = false; _isAcceptedByRider = false; });
             },
             tooltip: 'लॉग आउट',
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _fetchOnlyLatestOrderRest,
-        child: _latestOrder == null
-            ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.delivery_dining, size: 70, color: Colors.grey.shade400),
-                          const SizedBox(height: 12),
-                          const Text('फिलहाल कोई नया आर्डर नहीं है!\n(नेट खर्च बिल्कुल शून्य)', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            : ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(12),
-                children: [
-                  Card(
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('🔥 एकदम नया ऑर्डर', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
-                              Text('₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
-                            ],
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.green.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    const Text('कुल डिलीवर आर्डर्स', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('$_todayCompletedCount आर्डर्स', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                  ],
+                ),
+                Container(height: 30, width: 1, color: Colors.green.shade200),
+                Column(
+                  children: [
+                    const Text('कुल कमाई (Earnings)', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('₹$_todayTotalEarnings', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _fetchOnlyLatestOrderRest,
+              child: _latestOrder == null
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.delivery_dining, size: 70, color: Colors.grey.shade400),
+                                const SizedBox(height: 12),
+                                const Text('फिलहाल कोई नया आर्डर नहीं है!\n(पुराना आर्डर हिस्ट्री में सुरक्षित है)', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              ],
+                            ),
                           ),
-                          const Divider(height: 20),
-                          Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'N/A'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 6),
-                          Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
-                          const SizedBox(height: 14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => _showOrderDetailsDialog(_latestOrder!),
-                                icon: const Icon(Icons.info_outline),
-                                label: const Text('पूरी डिटेल्स'),
-                              ),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                onPressed: () => _updateOrderStatus(_latestOrder!['orderId'], 'Delivered'),
-                                child: const Text('डिलिवर्ड करें'),
-                              ),
-                            ],
+                        ),
+                      ],
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      children: [
+                        Card(
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('📦 नया डिलीवरी आर्डर', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 16)),
+                                    Text(
+                                      '₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(height: 20),
+                                
+                                Row(
+                                  children: [
+                                    const Icon(Icons.access_time, size: 16, color: Colors.purple),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'समय: ${_formatOrderTime(_latestOrder!['timestamp'] ?? _latestOrder!['createdAt'] ?? _latestOrder!['time'])}',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.purple),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+
+                                Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'N/A'}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 6),
+                                Text('फोन: ${_latestOrder!['customerPhone'] ?? _latestOrder!['phone'] ?? 'उपलब्ध नहीं'}', style: const TextStyle(fontSize: 14)),
+                                const SizedBox(height: 6),
+                                Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['deliveryAddress'] ?? 'पता नहीं'}', style: const TextStyle(fontSize: 14, color: Colors.black54)),
+                                const SizedBox(height: 12),
+                                OutlinedButton.icon(
+                                  onPressed: () => _showOrderDetailsDialog(_latestOrder!),
+                                  icon: const Icon(Icons.visibility),
+                                  label: const Text('पूरा आर्डर और आइटम्स देखें'),
+                                ),
+                                const SizedBox(height: 16),
+                                
+                                if (!_isAcceptedByRider)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade800, foregroundColor: Colors.white),
+                                      onPressed: _acceptOrder,
+                                      icon: const Icon(Icons.check_circle_outline),
+                                      label: const Text('आर्डर स्वीकार करें (Accept Order)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                    ),
+                                  )
+                                else
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                                      onPressed: () => _updateOrderStatus(_latestOrder!, 'Delivered'),
+                                      icon: const Icon(Icons.done_all),
+                                      label: const Text('डिलीवरी पूरी हुई (Mark as Delivered)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
+            ),
+          ),
+        ],
       ),
     );
   }
