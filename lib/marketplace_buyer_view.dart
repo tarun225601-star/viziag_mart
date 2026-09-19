@@ -172,6 +172,94 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     }
   }
 
+  // कार्ट देखने और आइटम्स की पूरी लिस्ट दिखाने के लिए बॉटम शीट
+  void _showCartBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(16),
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('🛒 आपकी कार्ट (Cart Items)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  CakeDatabase.cartItems.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(30.0),
+                          child: Center(child: Text('आपकी कार्ट खाली है!', style: TextStyle(color: Colors.grey, fontSize: 14))),
+                        )
+                      : Expanded(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: CakeDatabase.cartItems.length,
+                            itemBuilder: (context, index) {
+                              var item = CakeDatabase.cartItems[index];
+                              return ListTile(
+                                title: Text(item['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Text('₹${item['price']} x ${item['qty']}'),
+                                trailing: Text('₹${(item['price'] * item['qty']).toStringAsFixed(1)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                              );
+                            },
+                          ),
+                        ),
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('कुल राशि (Total):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text('₹$totalCartAmount', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (CakeDatabase.cartItems.isNotEmpty)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _clearCartAfterOrder();
+                        },
+                        child: const Text('आर्डर कन्फर्म करें (Place Order)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // आर्डर होने के बाद कार्ट साफ़ करना ताकि हरी पट्टी स्क्रीन से हट जाए
+  void _clearCartAfterOrder() {
+    setState(() {
+      _cartQuantities.clear();
+      CakeDatabase.cartItems.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('🎉 आर्डर सफलतापूर्वक प्लेस हो गया!'), backgroundColor: Colors.green),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     var shop = CakeDatabase.bakeryShop;
@@ -363,7 +451,6 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                         children: [
                                           Text('₹${prod['price'] ?? 0}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
                                           
-                                          // पहले ADD बटन दिखेगा, क्लिक करते ही काउंटर (- 1 +) में बदल जाएगा
                                           currentQty == 0
                                               ? SizedBox(
                                                   height: 28,
@@ -387,7 +474,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                                       InkWell(
                                                         onTap: () => _decrementQty(prod),
                                                         child: const Padding(
-                                                          padding: EdgeInsets.symmetric(horizontal: 8),
+                                                          padding: EdgeInsets.symmetric(horizontal: 6),
                                                           child: Icon(Icons.remove, color: Colors.white, size: 14),
                                                         ),
                                                       ),
@@ -395,7 +482,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                                       InkWell(
                                                         onTap: () => _incrementQty(prod),
                                                         child: const Padding(
-                                                          padding: EdgeInsets.symmetric(horizontal: 8),
+                                                          padding: EdgeInsets.symmetric(horizontal: 6),
                                                           child: Icon(Icons.add, color: Colors.white, size: 14),
                                                         ),
                                                       ),
@@ -416,43 +503,44 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
             ],
           ),
 
-          // ब्लिंकिट जैसा बॉटम फ्लोटिंग कार्ट बार
+          // नीचे हरी पट्टी (Bottom Cart Bar) जो आइटम्स होने पर दिखेगी और क्लिक करने पर कार्ट खुलेगी
           if (totalCartItems > 0)
             Positioned(
-              left: 12,
-              right: 12,
-              bottom: 15,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0C831F),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.shopping_cart, color: Colors.white, size: 20),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('$totalCartItems ITEMS', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                            Text('₹${totalCartAmount.toInt()}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const Row(
-                      children: [
-                        Text('View Cart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                        Icon(Icons.arrow_right, color: Colors.white),
-                      ],
-                    ),
-                  ],
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: GestureDetector(
+                onTap: _showCartBottomSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade800,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.shopping_cart, color: Colors.white, size: 20),
+                          const SizedBox(width: 8),
+                          Text('$totalCartItems ITEMS', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(width: 8),
+                          const Text('|', style: TextStyle(color: Colors.white54)),
+                          const SizedBox(width: 8),
+                          Text('₹$totalCartAmount', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                        ],
+                      ),
+                      const Row(
+                        children: [
+                          Text('View Cart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward_ios, color: Colors.white, size: 12),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
