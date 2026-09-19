@@ -811,26 +811,19 @@ class VendorOrdersTab extends StatefulWidget {
   State<VendorOrdersTab> createState() => _VendorOrdersTabState();
 }
 
-       class _VendorOrdersTabState extends State<VendorOrdersTab> {
+       
+  class _VendorOrdersTabState extends State<VendorOrdersTab> {
   List<Map<String, dynamic>> allOrders = [];
   bool isLoading = false;
-  String? _lastKnownLatestKey;
-  Timer? _orderRefreshTimer;
+  String? _lastKnownLatestKey; // सबसे आखिरी वाले नए ऑर्डर की आईडी याद रखने के लिए
 
   @override
   void initState() {
     super.initState();
     _loadInitialOrders();
-    _startLightningFastPolling();
   }
 
-  @override
-  void dispose() {
-    _orderRefreshTimer?.cancel();
-    super.dispose();
-  }
-
-  // 1. सबसे पहले लोकल मेमोरी से तुरंत आर्डर दिखाओ
+  // 1. राइडर स्टाइल: पहले लोकल मेमोरी से तुरंत दिखाओ (रोटी-पानी की तरह फास्ट)
   Future<void> _loadInitialOrders() async {
     setState(() => isLoading = true);
     await CakeDatabase.loadOrdersLocally();
@@ -843,49 +836,56 @@ class VendorOrdersTab extends StatefulWidget {
         isLoading = false;
       });
     }
+    // 2. राइडर जैसा 5 सेकंड वाला हल्का पोलिंग लूप शुरू करो
+    _startRiderStylePolling();
   }
 
-  // 2. 1 सेकंड वाला सुपरफास्ट पोलिंग लूप (बिना डेटा खर्च किए सीधे नया ऑर्डर खींचेगा)
-  void _startLightningFastPolling() {
-    _orderRefreshTimer?.cancel();
-    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (!mounted) return;
+  // 3. 5 सेकंड का गिनती वाला टाइमर (सिर्फ नया सिंगल ऑर्डर चेक करने के लिए)
+  void _startRiderStylePolling() {
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 5)); // 5 सेकंड की गिनती (कोई डेटा खर्च नहीं)
+      if (!mounted) return false;
 
       try {
-        final uri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json?orderBy="\$key"&limitToLast=1');
-        final res = await http.get(uri);
-
-        if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-          Map<String, dynamic> decodedData = json.decode(res.body);
+        // सिर्फ सिंगल लेटेस्ट ऑर्डर चेक करने वाला मेथड (जो राइडर में भी चलता है)
+        var newOrder = await CakeDatabase.fetchSingleLatestOrderOnly();
+        
+        if (newOrder != null) {
+          String newKey = newOrder['firebaseKey'] ?? newOrder['orderId'] ?? '';
           
-          decodedData.forEach((key, value) async {
-            if (value is Map) {
-              var newOrder = Map<String, dynamic>.from(value);
-              newOrder['firebaseKey'] = key;
-              newOrder['orderId'] = key;
+          // अगर यह आर्डर सच में नया है (यानी पुरानी लिस्ट वाले आख़िरी से मैच नहीं हुआ)
+          if (newKey.isNotEmpty && newKey != _lastKnownLatestKey) {
+            _lastKnownLatestKey = newKey;
+            
+            // लोकल मेमोरी में सबसे ऊपर जोड़कर परमानेंट सेव करो
+            CakeDatabase.localOrdersCache.insert(0, newOrder);
+            await CakeDatabase.saveOrdersLocally();
 
-              if (key.isNotEmpty && key != _lastKnownLatestKey) {
-                _lastKnownLatestKey = key;
-                
-                CakeDatabase.localOrdersCache.insert(0, newOrder);
-                await CakeDatabase.saveOrdersLocally();
-
-                if (mounted) {
-                  setState(() {
-                    allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
-                  });
-                }
-              }
+            if (mounted) {
+              setState(() {
+                allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
+              });
+              
+              // घंटी या नोटिफिकेशन जैसा छोटा हिंट
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🔔 नया आर्डर आ गया और लोकल मेमोरी में सेव हो गया!'), 
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
             }
-          });
+          }
         }
-      } catch (e) {
-        debugPrint("Polling error: $e");
+      } catch (_) {
+        // नेटवर्क की दिक्कत होने पर भी टाइमर चुपचाप चलता रहेगा, रुकेगा नहीं
       }
+
+      return mounted;
     });
   }
 
-  // 3. मैनुअल रिफ्रेश बटन
+  // मैनुअल रिफ्रेश बटन (अगर कभी पूरा रीलोड करना पड़े)
   Future<void> _manualRefresh() async {
     setState(() => isLoading = true);
     try {
@@ -896,7 +896,6 @@ class VendorOrdersTab extends StatefulWidget {
         data.forEach((key, val) {
           var item = Map<String, dynamic>.from(val);
           item['firebaseKey'] = key;
-          item['orderId'] = key;
           list.add(item);
         });
         CakeDatabase.localOrdersCache = list.reversed.toList();
@@ -918,67 +917,12 @@ class VendorOrdersTab extends StatefulWidget {
   Future<void> _updateStatus(String firebaseKey, String newStatus) async {
     await http.patch(
       Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
-      body: json.encode({'status': newStatus, 'orderStatus': newStatus}),
+      body: json.encode({'status': newStatus}),
     );
     _manualRefresh();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700, 
-              foregroundColor: Colors.white,
-            ),
-            onPressed: _manualRefresh,
-            icon: const Icon(Icons.sync),
-            label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ),
-        if (isLoading) const LinearProgressIndicator(color: Colors.green),
-        Expanded(
-          child: allOrders.isEmpty
-              ? const Center(child: Text('कोई आर्डर नहीं आया है', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  itemCount: allOrders.length,
-                  itemBuilder: (context, index) {
-                    var ord = allOrders[index];
-                    return Card(
-                      margin: const EdgeInsets.all(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                ),
-                                Text(
-                                  'कुल राशि: ₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', 
-                                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
-   
+
 
   
 
