@@ -436,7 +436,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-    if (_viewMode == 3) {
+        if (_viewMode == 3) {
       return DefaultTabController(
         length: 3,
         child: Column(
@@ -463,18 +463,18 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                 unselectedLabelColor: Colors.grey,
                 indicatorColor: Colors.green,
                 tabs: [
-                  Tab(text: '📦 प्रोडक्ट्स जोड़ें & मैनेज करें'),
-                  Tab(text: '📋 कस्टमर आर्डर्स'),
-                  Tab(text: '⚙️ दुकान सेटिंग्स'),
+                  Tab(icon: Icon(Icons.list_alt), text: 'ऑर्डर्स'),
+                  Tab(icon: Icon(Icons.inventory), text: 'प्रोडक्ट्स'),
+                  Tab(icon: Icon(Icons.settings), text: 'सेटिंग्स'),
                 ],
               ),
             ),
             const Expanded(
               child: TabBarView(
                 children: [
-                  VendorInventoryTab(),
-                  VendorOrdersTab(),
-                  VendorSettingsTab(),
+                  Center(child: Text('यहाँ वेंडर के लाइव ऑर्डर्स दिखेंगे')),
+                  Center(child: Text('यहाँ प्रोडक्ट्स मैनेज होंगे')),
+                  Center(child: Text('यहाँ सेटिंग्स आएंगी')),
                 ],
               ),
             ),
@@ -482,6 +482,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
         ),
       );
     }
+
 
     if (_viewMode == 4) {
       return Padding(
