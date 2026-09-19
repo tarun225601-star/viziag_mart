@@ -235,9 +235,11 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
                         onPressed: () {
                           Navigator.pop(context);
-                          _clearCartAfterOrder();
+                          // यहाँ पहले कार्ट से ऑर्डर को 'कार्ट एंड हिस्ट्री' में भेजा जाता है, 
+                          // फिर फौरन फाइनल सर्वर पुश ट्रिगर होता है ताकि वेंडर और राइडर दोनों को मिले।
+                          _confirmFinalOrderAndPushToCloud();
                         },
-                        child: const Text('आर्डर कन्फर्म करें (Place Order)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        child: const Text('फाइनल ऑर्डर दें (Confirm & Place Order)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                       ),
                     ),
                 ],
@@ -249,15 +251,67 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     );
   }
 
-  // आर्डर होने के बाद कार्ट साफ़ करना ताकि हरी पट्टी स्क्रीन से हट जाए
-  void _clearCartAfterOrder() {
-    setState(() {
-      _cartQuantities.clear();
-      CakeDatabase.cartItems.clear();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('🎉 आर्डर सफलतापूर्वक प्लेस हो गया!'), backgroundColor: Colors.green),
-    );
+  // 🚀 फाइनल ऑर्डर कन्फर्मेशन और क्लाउड (फायरबेस) पर वेंडर + राइडर दोनों के लिए भेजने का फंक्शन
+  Future<void> _confirmFinalOrderAndPushToCloud() async {
+    if (CakeDatabase.cartItems.isEmpty) return;
+
+    var shop = CakeDatabase.bakeryShop;
+    String shopName = shop['shopName'] ?? 'Tarun Fruit & Vegetable Shop';
+    String shopAddress = shop['address'] ?? 'Faridabad';
+    double totalAmount = totalCartAmount;
+
+    // आर्डर का पूरा डेटा पैकेट जो वेंडर और राइडर दोनों के लिए डेटाबेस में जाएगा
+    Map<String, dynamic> finalOrderData = {
+      'customerName': shop['ownerName'] ?? 'Tarun Kumar',
+      'customerPhone': shop['phone'] ?? '',
+      'customerAddress': shopAddress,
+      'shopName': shopName,
+      'shopAddress': shopAddress,
+      'items': List.from(CakeDatabase.cartItems), // कार्ट आइटम्स की कॉपी
+      'grandTotal': totalAmount,
+      'totalAmount': totalAmount,
+      'paymentMode': 'COD',
+      'orderStatus': 'Pending',
+      'status': 'Pending',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+
+    try {
+      // 1. फायरबेस के मुख्य 'orders' नोड पर भेजना (जहाँ से राइडर ऐप इसे फेच करता है)
+      final riderUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json');
+      final riderResponse = await http.post(riderUri, body: json.encode(finalOrderData));
+
+      // 2. वेंडर के सेक्शन के लिए भी अलग से आर्डर नोड पर भेजना (ताकि वेंडर डैशबोर्ड पर भी दिखे)
+      final vendorUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_orders.json');
+      await http.post(vendorUri, body: json.encode(finalOrderData));
+
+      if (riderResponse.statusCode == 200 || riderResponse.statusCode == 201) {
+        // लोकल कार्ट और क्वांटिटी को साफ़ करना ताकि ग्रीन पट्टी और कार्ट खाली हो जाए
+        setState(() {
+          _cartQuantities.clear();
+          CakeDatabase.cartItems.clear();
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 फाइनल ऑर्डर सफलतापूर्वक वेंडर और डिलीवरी राइडर को भेज दिया गया!', style: TextStyle(fontWeight: FontWeight.bold)),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to upload order to server');
+      }
+    } catch (e) {
+      debugPrint("Final order push error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ ऑर्डर भेजने में विफल: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
@@ -430,7 +484,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                           child: Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(color: !isShopOpen ? Colors.red : Colors.blue.shade700, borderRadius: BorderRadius.circular(4)),
-                                            child: Text(!isShopOpen ? 'CLOSED' : '⚡ 9 MINS', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                                            child: Text(!isShopOpen ? 'CLOSED' : '⚡ 9 MINS', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                                           ),
                                         ),
                                       ],
@@ -442,54 +496,41 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(prod['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 12)),
+                                      Text(prod['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                       const SizedBox(height: 2),
-                                      Text(stock <= 0 ? 'Out of Stock' : '1 ${prod['unit'] ?? 'Kg'}', style: TextStyle(color: stock <= 0 ? Colors.red : Colors.black54, fontSize: 10, fontWeight: stock <= 0 ? FontWeight.bold : FontWeight.normal)),
+                                      Text('₹${prod['price']} / ${prod['unit'] ?? 'Kg'}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 11)),
                                       const SizedBox(height: 6),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text('₹${prod['price'] ?? 0}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
-                                          
-                                          currentQty == 0
-                                              ? SizedBox(
-                                                  height: 28,
-                                                  child: OutlinedButton(
-                                                    style: OutlinedButton.styleFrom(
-                                                      foregroundColor: isDimmed ? Colors.grey : Colors.green.shade700,
-                                                      side: BorderSide(color: isDimmed ? Colors.grey : Colors.green.shade700, width: 1.2),
-                                                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                                    ),
-                                                    onPressed: isDimmed ? null : () => _incrementQty(prod),
-                                                    child: Text(stock <= 0 ? 'SOLD' : 'ADD', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                                                  ),
-                                                )
-                                              : Container(
-                                                  height: 28,
-                                                  decoration: BoxDecoration(color: Colors.green.shade700, borderRadius: BorderRadius.circular(6)),
-                                                  child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      InkWell(
-                                                        onTap: () => _decrementQty(prod),
-                                                        child: const Padding(
-                                                          padding: EdgeInsets.symmetric(horizontal: 6),
-                                                          child: Icon(Icons.remove, color: Colors.white, size: 14),
-                                                        ),
-                                                      ),
-                                                      Text('$currentQty', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                                                      InkWell(
-                                                        onTap: () => _incrementQty(prod),
-                                                        child: const Padding(
-                                                          padding: EdgeInsets.symmetric(horizontal: 6),
-                                                          child: Icon(Icons.add, color: Colors.white, size: 14),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
+                                      SizedBox(
+                                        height: 30,
+                                        child: currentQty == 0
+                                            ? ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.green.shade700,
+                                                  foregroundColor: Colors.white,
+                                                  padding: EdgeInsets.zero,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                                 ),
-                                        ],
+                                                onPressed: isDimmed ? null : () => _incrementQty(prod),
+                                                child: const Text('Add', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                              )
+                                            : Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  IconButton(
+                                                    padding: EdgeInsets.zero,
+                                                    constraints: const BoxConstraints(),
+                                                    icon: const Icon(Icons.remove_circle, color: Colors.red, size: 22),
+                                                    onPressed: () => _decrementQty(prod),
+                                                  ),
+                                                  Text('$currentQty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                  IconButton(
+                                                    padding: EdgeInsets.zero,
+                                                    constraints: const BoxConstraints(),
+                                                    icon: const Icon(Icons.add_circle, color: Colors.green, size: 22),
+                                                    onPressed: isDimmed ? null : () => _incrementQty(prod),
+                                                  ),
+                                                ],
+                                              ),
                                       ),
                                     ],
                                   ),
@@ -503,44 +544,40 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
             ],
           ),
 
-          // नीचे हरी पट्टी (Bottom Cart Bar) जो आइटम्स होने पर दिखेगी और क्लिक करने पर कार्ट खुलेगी
+          // नीचे फ्लोटिंग कार्ट बार (जब कार्ट में सामान हो)
           if (totalCartItems > 0)
             Positioned(
-              left: 10,
-              right: 10,
-              bottom: 10,
-              child: GestureDetector(
-                onTap: _showCartBottomSheet,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade800,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.shopping_cart, color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
-                          Text('$totalCartItems ITEMS', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(width: 8),
-                          const Text('|', style: TextStyle(color: Colors.white54)),
-                          const SizedBox(width: 8),
-                          Text('₹$totalCartAmount', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                        ],
+              left: 15,
+              right: 15,
+              bottom: 15,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade800,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('$totalCartItems Items Added', style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                        Text('₹$totalCartAmount', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.green.shade800,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      const Row(
-                        children: [
-                          Text('View Cart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                          SizedBox(width: 4),
-                          Icon(Icons.arrow_forward_ios, color: Colors.white, size: 12),
-                        ],
-                      ),
-                    ],
-                  ),
+                      onPressed: _showCartBottomSheet,
+                      child: const Text('View Cart & Orders', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                  ],
                 ),
               ),
             ),
