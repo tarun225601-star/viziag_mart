@@ -811,16 +811,17 @@ class VendorOrdersTab extends StatefulWidget {
   State<VendorOrdersTab> createState() => _VendorOrdersTabState();
 }
 
-          class _VendorOrdersTabState extends State<VendorOrdersTab> {
+       class _VendorOrdersTabState extends State<VendorOrdersTab> {
   List<Map<String, dynamic>> allOrders = [];
   bool isLoading = false;
-  String? _lastKnownLatestKey; // सबसे आखिरी वाले नए ऑर्डर की आईडी याद रखने के लिए
+  String? _lastKnownLatestKey;
   Timer? _orderRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadInitialOrders();
+    _startLightningFastPolling();
   }
 
   @override
@@ -829,7 +830,7 @@ class VendorOrdersTab extends StatefulWidget {
     super.dispose();
   }
 
-  // 1. राइडर स्टाइल: पहले लोकल मेमोरी से तुरंत दिखाओ (रोटी-पानी की तरह फास्ट)
+  // 1. सबसे पहले लोकल मेमोरी से तुरंत आर्डर दिखाओ
   Future<void> _loadInitialOrders() async {
     setState(() => isLoading = true);
     await CakeDatabase.loadOrdersLocally();
@@ -842,12 +843,10 @@ class VendorOrdersTab extends StatefulWidget {
         isLoading = false;
       });
     }
-    // 2. 1 सेकंड वाला सुपरफास्ट पोलिंग लूप शुरू करो
-    _startRiderStylePolling();
   }
 
-  // 3. 1 सेकंड का सुपरफास्ट टाइमर (सीधे REST API और limitToLast=1 के साथ)
-  void _startRiderStylePolling() {
+  // 2. 1 सेकंड वाला सुपरफास्ट पोलिंग लूप (बिना डेटा खर्च किए सीधे नया ऑर्डर खींचेगा)
+  void _startLightningFastPolling() {
     _orderRefreshTimer?.cancel();
     _orderRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted) return;
@@ -865,11 +864,9 @@ class VendorOrdersTab extends StatefulWidget {
               newOrder['firebaseKey'] = key;
               newOrder['orderId'] = key;
 
-              // अगर यह आर्डर सच में नया है (यानी पुरानी लिस्ट वाले आख़िरी से मैच नहीं हुआ)
               if (key.isNotEmpty && key != _lastKnownLatestKey) {
                 _lastKnownLatestKey = key;
                 
-                // लोकल मेमोरी में सबसे ऊपर जोड़कर परमानेंट सेव करो
                 CakeDatabase.localOrdersCache.insert(0, newOrder);
                 await CakeDatabase.saveOrdersLocally();
 
@@ -877,15 +874,6 @@ class VendorOrdersTab extends StatefulWidget {
                   setState(() {
                     allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
                   });
-                  
-                  // घंटी या नोटिफिकेशन जैसा छोटा हिंट
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('🔔 नया आर्डर आ गया और तुरंत स्क्रीन पर दिख गया!'), 
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
                 }
               }
             }
@@ -897,7 +885,7 @@ class VendorOrdersTab extends StatefulWidget {
     });
   }
 
-  // मैनुअल रिफ्रेश बटन (अगर कभी पूरा रीलोड करना पड़े)
+  // 3. मैनुअल रिफ्रेश बटन
   Future<void> _manualRefresh() async {
     setState(() => isLoading = true);
     try {
@@ -990,6 +978,46 @@ class VendorOrdersTab extends StatefulWidget {
     );
   }
 }
+   
+
+  
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700, 
+              foregroundColor: Colors.white,
+            ),
+            onPressed: _manualRefresh,
+            icon: const Icon(Icons.sync),
+            label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+        if (isLoading) const LinearProgressIndicator(color: Colors.green),
+        Expanded(
+          child: allOrders.isEmpty
+              ? const Center(child: Text('कोई आर्डर नहीं आया है', style: TextStyle(color: Colors.grey)))
+              : ListView.builder(
+                  itemCount: allOrders.length,
+                  itemBuilder: (context, index) {
+                    var ord = allOrders[index];
+                    return Card(
+                      margin: const EdgeInsets.all(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'आर्डर #${
 
 
   @override
