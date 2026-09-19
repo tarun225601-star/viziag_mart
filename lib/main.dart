@@ -929,7 +929,8 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
           padding: const EdgeInsets.all(8.0),
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: _fetchOrders,
+            onPressed: _manualRefresh,
+            
             icon: const Icon(Icons.sync),
             label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
