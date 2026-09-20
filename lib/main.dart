@@ -474,7 +474,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
               child: TabBarView(
                 children: [
                   VendorInventoryTab(),
-                  VendorOrdersView(),
+                  VendorOrdersScreen(),
                   VendorSettingsTab(),
                 ],
               ),
