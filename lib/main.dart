@@ -811,41 +811,248 @@ class VendorOrdersTab extends StatefulWidget {
 }
 
 class _VendorOrdersTabState extends State<VendorOrdersTab> {
-  List<Map<String, dynamic>> allOrders = [];
+  Map<String, dynamic>? _latestOrder;
   bool isLoading = false;
+  
+  Set<String> _localSeenOrderIds = {};
+  Timer? _orderRefreshTimer;
 
   @override
   void initState() {
     super.initState();
-    _fetchOrders();
+    _loadSeenOrders();
+    _fetchOnlyLatestOrderRest();
+    _startOrderRefreshTimer();
   }
 
-  Future<void> _fetchOrders() async {
+  @override
+  void dispose() {
+    _orderRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadSeenOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> savedIds = prefs.getStringList('vendor_seen_order_ids') ?? [];
+    setState(() {
+      _localSeenOrderIds = savedIds.toSet();
+    });
+  }
+
+  Future<void> _saveSeenOrderIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('vendor_seen_order_ids', _localSeenOrderIds.toList());
+  }
+
+  void _triggerNewOrderAlert() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      HapticFeedback.vibrate();
+    });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🚨 दुकान पर नया आर्डर आ गया है!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _fetchOnlyLatestOrderRest() async {
+    try {
+      final uri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json?orderBy="\$key"&limitToLast=1');
+      final res = await http.get(uri);
+
+      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
+        Map<String, dynamic> decodedData = json.decode(res.body);
+        bool hasNewOrder = false;
+        Map<String, dynamic>? fetchedOrder;
+
+        decodedData.forEach((key, value) {
+          if (value is Map) {
+            var order = Map<String, dynamic>.from(value);
+            order['firebaseKey'] = key;
+
+            String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
+            if (!status.toLowerCase().contains('delivered') && !status.toLowerCase().contains('cancelled')) {
+              fetchedOrder = order;
+
+              if (!_localSeenOrderIds.contains(key)) {
+                _localSeenOrderIds.add(key);
+                hasNewOrder = true;
+              }
+            }
+          }
+        });
+
+        _saveSeenOrderIds();
+
+        if (mounted) {
+          setState(() {
+            _latestOrder = fetchedOrder;
+          });
+
+          if (hasNewOrder) {
+            _triggerNewOrderAlert();
+          }
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _latestOrder = null;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Fetch latest order error: $e");
+    }
+  }
+
+  void _startOrderRefreshTimer() {
+    _orderRefreshTimer?.cancel();
+    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
+      if (mounted) {
+        _fetchOnlyLatestOrderRest();
+      }
+    });
+  }
+
+  Future<void> _updateStatus(String firebaseKey, String newStatus) async {
     setState(() => isLoading = true);
     try {
-      final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
-      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> data = json.decode(res.body);
-        List<Map<String, dynamic>> list = [];
-        data.forEach((key, val) {
-          var item = Map<String, dynamic>.from(val);
-          item['firebaseKey'] = key;
-          list.add(item);
-        });
-        setState(() => allOrders = list.reversed.toList());
+      await http.patch(
+        Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
+        body: json.encode({'status': newStatus, 'orderStatus': newStatus}),
+      );
+      HapticFeedback.mediumImpact();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ स्टेटस अपडेट हुआ: $newStatus'), backgroundColor: Colors.green),
+        );
       }
+      
+      setState(() {
+        _latestOrder = null;
+      });
+      _fetchOnlyLatestOrderRest();
+    } catch (e) {
+      debugPrint("Status update error: $e");
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  Future<void> _updateStatus(String firebaseKey, String newStatus) async {
-    await http.patch(
-      Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
-      body: json.encode({'status': newStatus}),
-    );
-    _fetchOrders();
+  String _formatOrderTime(dynamic timestampRaw) {
+    if (timestampRaw == null) return 'समय उपलब्ध नहीं';
+    try {
+      DateTime orderTime;
+      if (timestampRaw is int) {
+        orderTime = DateTime.fromMillisecondsSinceEpoch(timestampRaw);
+      } else if (timestampRaw is String) {
+        orderTime = DateTime.parse(timestampRaw);
+      } else {
+        return 'समय उपलब्ध नहीं';
+      }
+      return DateFormat('hh:mm a (dd MMM)').format(orderTime);
+    } catch (e) {
+      return timestampRaw.toString();
+    }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('🛍️ वेंडर लाइव आर्डर टैब'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _fetchOnlyLatestOrderRest,
+            tooltip: 'मैनुअल रिफ्रेश',
+          ),
+        ],
+      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: _latestOrder == null
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.hourglass_empty, size: 50, color: Colors.grey),
+                          SizedBox(height: 10),
+                          Text(
+                            'नये आर्डर का इंतज़ार है...\n(हर 6 सेकंड में ऑटो-चेक हो रहा है)',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView(
+                      children: [
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text('🚨 नया लाइव आर्डर!', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 16)),
+                                    const Spacer(),
+                                    Text(_formatOrderTime(_latestOrder!['timestamp'] ?? _latestOrder!['createdAt'] ?? _latestOrder!['time']), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                  ],
+                                ),
+                                const Divider(),
+                                Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'N/A'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                const SizedBox(height: 6),
+                                Text('मोबाइल: ${_latestOrder!['customerPhone'] ?? _latestOrder!['phone'] ?? 'N/A'}'),
+                                const SizedBox(height: 6),
+                                Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['address'] ?? 'N/A'}'),
+                                const SizedBox(height: 10),
+                                const Text('आइटम्स:', style: TextStyle(fontWeight: FontWeight.bold)),
+                                Text((_latestOrder!['items'] is List) ? (_latestOrder!['items'] as List).map((i) => "${i['name'] ?? 'Item'} (x${i['qty'] ?? 1})").join(', ') : 'विवरण उपलब्ध नहीं'),
+                                const SizedBox(height: 10),
+                                Text('कुल राशि: ₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                                        onPressed: () => _updateStatus(_latestOrder!['firebaseKey'], 'Preparing'),
+                                        child: const Text('तैयार करें'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                                        onPressed: () => _updateStatus(_latestOrder!['firebaseKey'], 'Ready for Delivery'),
+                                        child: const Text('डिलीवरी भेजें'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+    );
+  }
+}
 
   @override
   Widget build(BuildContext context) {
