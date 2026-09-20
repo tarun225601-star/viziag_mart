@@ -1,4 +1,3 @@
-import 'vendor_bank_settings_view.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'database_models.dart';
@@ -436,7 +435,7 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
       );
     }
 
-        if (_viewMode == 3) {
+    if (_viewMode == 3) {
       return DefaultTabController(
         length: 3,
         child: Column(
@@ -463,18 +462,18 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
                 unselectedLabelColor: Colors.grey,
                 indicatorColor: Colors.green,
                 tabs: [
-                  Tab(icon: Icon(Icons.list_alt), text: 'ऑर्डर्स'),
-                  Tab(icon: Icon(Icons.inventory), text: 'प्रोडक्ट्स'),
-                  Tab(icon: Icon(Icons.settings), text: 'सेटिंग्स'),
+                  Tab(text: '📦 प्रोडक्ट्स जोड़ें & मैनेज करें'),
+                  Tab(text: '📋 कस्टमर आर्डर्स'),
+                  Tab(text: '⚙️ दुकान सेटिंग्स'),
                 ],
               ),
             ),
             const Expanded(
               child: TabBarView(
                 children: [
-                  Center(child: Text('यहाँ वेंडर के लाइव ऑर्डर्स दिखेंगे')),
-                  Center(child: Text('यहाँ प्रोडक्ट्स मैनेज होंगे')),
-                  Center(child: Text('यहाँ सेटिंग्स आएंगी')),
+                  VendorInventoryTab(),
+                  VendorOrdersTab(),
+                  VendorSettingsTab(),
                 ],
               ),
             ),
@@ -482,7 +481,6 @@ class _VendorAuthAndPortalViewState extends State<VendorAuthAndPortalView> {
         ),
       );
     }
-
 
     if (_viewMode == 4) {
       return Padding(
@@ -812,82 +810,17 @@ class VendorOrdersTab extends StatefulWidget {
   State<VendorOrdersTab> createState() => _VendorOrdersTabState();
 }
 
-       
-  class _VendorOrdersTabState extends State<VendorOrdersTab> {
+class _VendorOrdersTabState extends State<VendorOrdersTab> {
   List<Map<String, dynamic>> allOrders = [];
   bool isLoading = false;
-  String? _lastKnownLatestKey; // सबसे आखिरी वाले नए ऑर्डर की आईडी याद रखने के लिए
 
   @override
   void initState() {
     super.initState();
-    _loadInitialOrders();
+    _fetchOrders();
   }
 
-  // 1. राइडर स्टाइल: पहले लोकल मेमोरी से तुरंत दिखाओ (रोटी-पानी की तरह फास्ट)
-  Future<void> _loadInitialOrders() async {
-    setState(() => isLoading = true);
-    await CakeDatabase.loadOrdersLocally();
-    if (mounted) {
-      setState(() {
-        allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
-        if (allOrders.isNotEmpty) {
-          _lastKnownLatestKey = allOrders.first['firebaseKey'] ?? allOrders.first['orderId'];
-        }
-        isLoading = false;
-      });
-    }
-    // 2. राइडर जैसा 5 सेकंड वाला हल्का पोलिंग लूप शुरू करो
-    _startRiderStylePolling();
-  }
-
-  // 3. 5 सेकंड का गिनती वाला टाइमर (सिर्फ नया सिंगल ऑर्डर चेक करने के लिए)
-  void _startRiderStylePolling() {
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 5)); // 5 सेकंड की गिनती (कोई डेटा खर्च नहीं)
-      if (!mounted) return false;
-
-      try {
-        // सिर्फ सिंगल लेटेस्ट ऑर्डर चेक करने वाला मेथड (जो राइडर में भी चलता है)
-        var newOrder = await CakeDatabase.fetchSingleLatestOrderOnly();
-        
-        if (newOrder != null) {
-          String newKey = newOrder['firebaseKey'] ?? newOrder['orderId'] ?? '';
-          
-          // अगर यह आर्डर सच में नया है (यानी पुरानी लिस्ट वाले आख़िरी से मैच नहीं हुआ)
-          if (newKey.isNotEmpty && newKey != _lastKnownLatestKey) {
-            _lastKnownLatestKey = newKey;
-            
-            // लोकल मेमोरी में सबसे ऊपर जोड़कर परमानेंट सेव करो
-            CakeDatabase.localOrdersCache.insert(0, newOrder);
-            await CakeDatabase.saveOrdersLocally();
-
-            if (mounted) {
-              setState(() {
-                allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
-              });
-              
-              // घंटी या नोटिफिकेशन जैसा छोटा हिंट
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('🔔 नया आर्डर आ गया और लोकल मेमोरी में सेव हो गया!'), 
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-          }
-        }
-      } catch (_) {
-        // नेटवर्क की दिक्कत होने पर भी टाइमर चुपचाप चलता रहेगा, रुकेगा नहीं
-      }
-
-      return mounted;
-    });
-  }
-
-  // मैनुअल रिफ्रेश बटन (अगर कभी पूरा रीलोड करना पड़े)
-  Future<void> _manualRefresh() async {
+  Future<void> _fetchOrders() async {
     setState(() => isLoading = true);
     try {
       final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
@@ -899,16 +832,7 @@ class VendorOrdersTab extends StatefulWidget {
           item['firebaseKey'] = key;
           list.add(item);
         });
-        CakeDatabase.localOrdersCache = list.reversed.toList();
-        await CakeDatabase.saveOrdersLocally();
-        if (mounted) {
-          setState(() {
-            allOrders = CakeDatabase.localOrdersCache;
-            if (allOrders.isNotEmpty) {
-              _lastKnownLatestKey = allOrders.first['firebaseKey'];
-            }
-          });
-        }
+        setState(() => allOrders = list.reversed.toList());
       }
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -920,12 +844,8 @@ class VendorOrdersTab extends StatefulWidget {
       Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
       body: json.encode({'status': newStatus}),
     );
-    _manualRefresh();
+    _fetchOrders();
   }
-
-
-
-  
 
   @override
   Widget build(BuildContext context) {
@@ -934,11 +854,8 @@ class VendorOrdersTab extends StatefulWidget {
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700, 
-              foregroundColor: Colors.white,
-            ),
-            onPressed: _manualRefresh,
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+            onPressed: _fetchOrders,
             icon: const Icon(Icons.sync),
             label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -953,115 +870,17 @@ class VendorOrdersTab extends StatefulWidget {
                     var ord = allOrders[index];
                     return Card(
                       margin: const EdgeInsets.all(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'आर्डर #${
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: _manualRefresh,
-            
-            icon: const Icon(Icons.sync),
-            label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ),
-        if (isLoading) const LinearProgressIndicator(color: Colors.green),
-        Expanded(
-          child: allOrders.isEmpty
-              ? const Center(child: Text('कोई आर्डर नहीं आया है', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  itemCount: allOrders.length,
-                  itemBuilder: (context, index) {
-                    var ord = allOrders[index];
-                    
-              
-                  
-                  return Card(
-  margin: const EdgeInsets.all(8),
-  child: Padding(
-    padding: const EdgeInsets.all(8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            Text(
-              'कुल राशि: ₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', 
-              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        const Divider(),
-        if (ord['items'] != null && ord['items'] is List)
-          ...(ord['items'] as List).map((it) {
-            var m = it is Map ? it : {};
-            var imgUrl = m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'] ?? '';
-            
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  if (imgUrl.toString().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          imgUrl.toString(),
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 40, color: Colors.green),
-                        ),
-                      ),
-                    )
-                  else
-                    const Padding(
-                      padding: EdgeInsets.only(right: 10),
-                      child: Icon(Icons.fastfood, size: 40, color: Colors.green),
-                    ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                  if (m['price'] != null)
-                    Text('₹${m['price']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-            );
-          }),
-        const Divider(),
-        Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
-        const SizedBox(height: 2),
-        Text('📍 पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-    
-      
-
-                    
+                      child: ListTile(
+                        title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                        subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
+                        isThreeLine: true,
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
+                            const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
+                            const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
+                            const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
                           ],
                         ),
                       ),
@@ -1100,25 +919,7 @@ class _VendorSettingsTabState extends State<VendorSettingsTab> {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(12),
-            children: [
-        // 🟢 यह रहा नया बैंक सेटिंग्स वाला कार्ड (इसे यहाँ डालें)
-        Card(
-  margin: const EdgeInsets.symmetric(vertical: 8),
-  child: ListTile(
-    leading: const Icon(Icons.account_balance, color: Colors.green, size: 28),
-    title: const Text('बैंक खाता विवरण (Bank Details)', style: TextStyle(fontWeight: FontWeight.bold)),
-    subtitle: const Text('अकाउंट नंबर और IFSC कोड मैनेज करें'),
-    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-    onTap: () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const VendorBankSettingsView()),
-      );
-    },
-  ),
-),
-
-            
+      children: [
         Card(
           color: isOpen ? Colors.green.shade50 : Colors.red.shade50,
           child: SwitchListTile(
