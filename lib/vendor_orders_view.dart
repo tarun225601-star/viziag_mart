@@ -148,6 +148,59 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
     }
   }
 
+  // 🛡️ फुलन-फानल और अचूक इमेज रेंडरिंग फंक्शन (कभी ग्रे स्क्रीन नहीं आने देगा)
+  Widget _buildBulletproofImage(dynamic imagePath, double width, double height, IconData fallbackIcon) {
+    if (imagePath == null || imagePath.toString().isEmpty) {
+      return _fallbackBox(width, height, fallbackIcon);
+    }
+
+    String pathStr = imagePath.toString();
+
+    // 1. अगर यह Base64 डेटा है
+    if (pathStr.startsWith('data:image') || (pathStr.length > 100 && !pathStr.startsWith('http') && !pathStr.startsWith('/'))) {
+      try {
+        String base64Clean = pathStr.contains(',') ? pathStr.split(',').last : pathStr;
+        return Image.memory(
+          base64Decode(base64Clean),
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => _fallbackBox(width, height, fallbackIcon),
+        );
+      } catch (_) {}
+    }
+
+    // 2. अगर यह इंटरनेट का ऑनलाइन लिंक (URL) है
+    if (pathStr.startsWith('http://') || pathStr.startsWith('https://')) {
+      return Image.network(
+        pathStr,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _fallbackBox(width, height, fallbackIcon),
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green)),
+          );
+        },
+      );
+    }
+
+    return _fallbackBox(width, height, fallbackIcon);
+  }
+
+  Widget _fallbackBox(double width, double height, IconData icon) {
+    return Container(
+      width: width,
+      height: height,
+      color: Colors.green.shade50,
+      child: Icon(icon, color: Colors.green, size: width * 0.5),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -197,7 +250,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                         final order = allOrders[index];
                         String currentStatus = order['status'] ?? 'Pending';
                         
-                        // --- यहाँ है असली स्मार्ट एक्सट्रैक्शन लॉजिक (हर जगह से ढूंढ लेगा) ---
+                        // --- स्मार्ट एक्सट्रैक्शन लॉजिक ---
                         var itemsList = order['items'];
                         String itemTitle = '';
                         String? imageUrl;
@@ -211,7 +264,6 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                             quantity = firstItem['qty'] ?? firstItem['quantity'] ?? 1;
                           }
                         } else if (itemsList is Map && itemsList.isNotEmpty) {
-                          // अगर items लिस्ट न होकर Map के रूप में हो
                           var firstItem = itemsList.values.first;
                           if (firstItem is Map) {
                             itemTitle = firstItem['title'] ?? firstItem['name'] ?? firstItem['productName'] ?? '';
@@ -220,7 +272,6 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                           }
                         }
 
-                        // अगर ऊपर न मिले, तो सीधे रूट लेवल पर चेक करो
                         if (itemTitle.isEmpty) {
                           itemTitle = order['title'] ?? order['name'] ?? order['productName'] ?? 'ऑर्डर #${order['orderId'] ?? index + 1}';
                         }
@@ -245,25 +296,8 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                                   children: [
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: imageUrl != null && imageUrl.toString().isNotEmpty
-                                          ? Image.network(
-                                              imageUrl.toString(),
-                                              width: 60,
-                                              height: 60,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) => Container(
-                                                width: 60,
-                                                height: 60,
-                                                color: Colors.grey.shade200,
-                                                child: const Icon(Icons.fastfood, color: Colors.grey),
-                                              ),
-                                            )
-                                          : Container(
-                                              width: 60,
-                                              height: 60,
-                                              color: Colors.green.shade50,
-                                              child: const Icon(Icons.shopping_bag, color: Colors.green, size: 30),
-                                            ),
+                                      // 🛡️ यहाँ पर पुरानी Image.network की जगह अचूक फंक्शन लगा दिया है
+                                      child: _buildBulletproofImage(imageUrl, 60, 60, Icons.shopping_bag),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
