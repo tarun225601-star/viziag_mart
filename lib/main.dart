@@ -1,3 +1,4 @@
+import 'vendor_bank_settings_view.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'database_models.dart';
@@ -811,248 +812,114 @@ class VendorOrdersTab extends StatefulWidget {
 }
 
 class _VendorOrdersTabState extends State<VendorOrdersTab> {
-  Map<String, dynamic>? _latestOrder;
+  List<Map<String, dynamic>> allOrders = [];
   bool isLoading = false;
-  
-  Set<String> _localSeenOrderIds = {};
-  Timer? _orderRefreshTimer;
+  String? _lastKnownLatestKey; // सबसे आखिरी वाले नए ऑर्डर की आईडी याद रखने के लिए
 
   @override
   void initState() {
     super.initState();
-    _loadSeenOrders();
-    _fetchOnlyLatestOrderRest();
-    _startOrderRefreshTimer();
+    _loadInitialOrders();
   }
 
-  @override
-  void dispose() {
-    _orderRefreshTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _loadSeenOrders() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> savedIds = prefs.getStringList('vendor_seen_order_ids') ?? [];
-    setState(() {
-      _localSeenOrderIds = savedIds.toSet();
-    });
-  }
-
-  Future<void> _saveSeenOrderIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('vendor_seen_order_ids', _localSeenOrderIds.toList());
-  }
-
-  void _triggerNewOrderAlert() {
-    HapticFeedback.heavyImpact();
-    Future.delayed(const Duration(milliseconds: 300), () {
-      HapticFeedback.vibrate();
-    });
-    
+  // 1. राइडर स्टाइल: पहले लोकल मेमोरी से तुरंत दिखाओ (रोटी-पानी की तरह फास्ट)
+  Future<void> _loadInitialOrders() async {
+    setState(() => isLoading = true);
+    await CakeDatabase.loadOrdersLocally();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🚨 दुकान पर नया आर्डर आ गया है!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 4),
-        ),
-      );
+      setState(() {
+        allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
+        if (allOrders.isNotEmpty) {
+          _lastKnownLatestKey = allOrders.first['firebaseKey'] ?? allOrders.first['orderId'];
+        }
+        isLoading = false;
+      });
     }
+    // 2. राइडर जैसा 5 सेकंड वाला हल्का पोलिंग लूप शुरू करो
+    _startRiderStylePolling();
   }
 
-  Future<void> _fetchOnlyLatestOrderRest() async {
-    try {
-      final uri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json?orderBy="\$key"&limitToLast=1');
-      final res = await http.get(uri);
+  // 3. 5 सेकंड का गिनती वाला टाइमर (सिर्फ नया सिंगल ऑर्डर चेक करने के लिए)
+  void _startRiderStylePolling() {
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 5)); // 5 सेकंड की गिनती (कोई डेटा खर्च नहीं)
+      if (!mounted) return false;
 
-      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> decodedData = json.decode(res.body);
-        bool hasNewOrder = false;
-        Map<String, dynamic>? fetchedOrder;
+      try {
+        // सिर्फ सिंगल लेटेस्ट ऑर्डर चेक करने वाला मेथड (जो राइडर में भी चलता है)
+        var newOrder = await CakeDatabase.fetchSingleLatestOrderOnly();
+        
+        if (newOrder != null) {
+          String newKey = newOrder['firebaseKey'] ?? newOrder['orderId'] ?? '';
+          
+          // अगर यह आर्डर सच में नया है (यानी पुरानी लिस्ट वाले आख़िरी से मैच नहीं हुआ)
+          if (newKey.isNotEmpty && newKey != _lastKnownLatestKey) {
+            _lastKnownLatestKey = newKey;
+            
+            // लोकल मेमोरी में सबसे ऊपर जोड़कर परमानेंट सेव करो
+            CakeDatabase.localOrdersCache.insert(0, newOrder);
+            await CakeDatabase.saveOrdersLocally();
 
-        decodedData.forEach((key, value) {
-          if (value is Map) {
-            var order = Map<String, dynamic>.from(value);
-            order['firebaseKey'] = key;
-
-            String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
-            if (!status.toLowerCase().contains('delivered') && !status.toLowerCase().contains('cancelled')) {
-              fetchedOrder = order;
-
-              if (!_localSeenOrderIds.contains(key)) {
-                _localSeenOrderIds.add(key);
-                hasNewOrder = true;
-              }
+            if (mounted) {
+              setState(() {
+                allOrders = List<Map<String, dynamic>>.from(CakeDatabase.localOrdersCache);
+              });
+              
+              // घंटी या नोटिफिकेशन जैसा छोटा हिंट
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🔔 नया आर्डर आ गया और लोकल मेमोरी में सेव हो गया!'), 
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
             }
           }
-        });
-
-        _saveSeenOrderIds();
-
-        if (mounted) {
-          setState(() {
-            _latestOrder = fetchedOrder;
-          });
-
-          if (hasNewOrder) {
-            _triggerNewOrderAlert();
-          }
         }
-      } else {
-        if (mounted) {
-          setState(() {
-            _latestOrder = null;
-          });
-        }
+      } catch (_) {
+        // नेटवर्क की दिक्कत होने पर भी टाइमर चुपचाप चलता रहेगा, रुकेगा नहीं
       }
-    } catch (e) {
-      debugPrint("Fetch latest order error: $e");
-    }
-  }
 
-  void _startOrderRefreshTimer() {
-    _orderRefreshTimer?.cancel();
-    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
-      if (mounted) {
-        _fetchOnlyLatestOrderRest();
-      }
+      return mounted;
     });
   }
 
-  Future<void> _updateStatus(String firebaseKey, String newStatus) async {
+  // मैनुअल रिफ्रेश बटन (अगर कभी पूरा रीलोड करना पड़े)
+  Future<void> _manualRefresh() async {
     setState(() => isLoading = true);
     try {
-      await http.patch(
-        Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
-        body: json.encode({'status': newStatus, 'orderStatus': newStatus}),
-      );
-      HapticFeedback.mediumImpact();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ स्टेटस अपडेट हुआ: $newStatus'), backgroundColor: Colors.green),
-        );
+      final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
+      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
+        Map<String, dynamic> data = json.decode(res.body);
+        List<Map<String, dynamic>> list = [];
+        data.forEach((key, val) {
+          var item = Map<String, dynamic>.from(val);
+          item['firebaseKey'] = key;
+          list.add(item);
+        });
+        CakeDatabase.localOrdersCache = list.reversed.toList();
+        await CakeDatabase.saveOrdersLocally();
+        if (mounted) {
+          setState(() {
+            allOrders = CakeDatabase.localOrdersCache;
+            if (allOrders.isNotEmpty) {
+              _lastKnownLatestKey = allOrders.first['firebaseKey'];
+            }
+          });
+        }
       }
-      
-      setState(() {
-        _latestOrder = null;
-      });
-      _fetchOnlyLatestOrderRest();
-    } catch (e) {
-      debugPrint("Status update error: $e");
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  String _formatOrderTime(dynamic timestampRaw) {
-    if (timestampRaw == null) return 'समय उपलब्ध नहीं';
-    try {
-      DateTime orderTime;
-      if (timestampRaw is int) {
-        orderTime = DateTime.fromMillisecondsSinceEpoch(timestampRaw);
-      } else if (timestampRaw is String) {
-        orderTime = DateTime.parse(timestampRaw);
-      } else {
-        return 'समय उपलब्ध नहीं';
-      }
-      return DateFormat('hh:mm a (dd MMM)').format(orderTime);
-    } catch (e) {
-      return timestampRaw.toString();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('🛍️ वेंडर लाइव आर्डर टैब'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchOnlyLatestOrderRest,
-            tooltip: 'मैनुअल रिफ्रेश',
-          ),
-        ],
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: _latestOrder == null
-                  ? const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.hourglass_empty, size: 50, color: Colors.grey),
-                          SizedBox(height: 10),
-                          Text(
-                            'नये आर्डर का इंतज़ार है...\n(हर 6 सेकंड में ऑटो-चेक हो रहा है)',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey, fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView(
-                      children: [
-                        Card(
-                          elevation: 4,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Text('🚨 नया लाइव आर्डर!', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 16)),
-                                    const Spacer(),
-                                    Text(_formatOrderTime(_latestOrder!['timestamp'] ?? _latestOrder!['createdAt'] ?? _latestOrder!['time']), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                  ],
-                                ),
-                                const Divider(),
-                                Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'N/A'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                const SizedBox(height: 6),
-                                Text('मोबाइल: ${_latestOrder!['customerPhone'] ?? _latestOrder!['phone'] ?? 'N/A'}'),
-                                const SizedBox(height: 6),
-                                Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['address'] ?? 'N/A'}'),
-                                const SizedBox(height: 10),
-                                const Text('आइटम्स:', style: TextStyle(fontWeight: FontWeight.bold)),
-                                Text((_latestOrder!['items'] is List) ? (_latestOrder!['items'] as List).map((i) => "${i['name'] ?? 'Item'} (x${i['qty'] ?? 1})").join(', ') : 'विवरण उपलब्ध नहीं'),
-                                const SizedBox(height: 10),
-                                Text('कुल राशि: ₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                                const SizedBox(height: 20),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                                        onPressed: () => _updateStatus(_latestOrder!['firebaseKey'], 'Preparing'),
-                                        child: const Text('तैयार करें'),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                        onPressed: () => _updateStatus(_latestOrder!['firebaseKey'], 'Ready for Delivery'),
-                                        child: const Text('डिलीवरी भेजें'),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
+  Future<void> _updateStatus(String firebaseKey, String newStatus) async {
+    await http.patch(
+      Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
+      body: json.encode({'status': newStatus}),
     );
+    _manualRefresh();
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -1062,7 +929,8 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
           padding: const EdgeInsets.all(8.0),
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: _fetchOrders,
+            onPressed: _manualRefresh,
+            
             icon: const Icon(Icons.sync),
             label: const Text('आर्डर्स रिफ्रेश करें', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -1075,19 +943,81 @@ class _VendorOrdersTabState extends State<VendorOrdersTab> {
                   itemCount: allOrders.length,
                   itemBuilder: (context, index) {
                     var ord = allOrders[index];
-                    return Card(
-                      margin: const EdgeInsets.all(8),
-                      child: ListTile(
-                        title: Text('ग्राहक: ${ord['customerName']} (${ord['customerPhone']})', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
-                        subtitle: Text('पता: ${ord['customerAddress']}\nकुल राशि: ₹${ord['grandTotal']?.toInt()}\nस्टेटस: ${ord['status']}', style: const TextStyle(color: Colors.black87)),
-                        isThreeLine: true,
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (val) => _updateStatus(ord['firebaseKey'], val),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'Accepted ✅', child: Text('Accept')),
-                            const PopupMenuItem(value: 'Dispatched 🚚', child: Text('Dispatch')),
-                            const PopupMenuItem(value: 'Delivered 🎉', child: Text('Deliver')),
-                            const PopupMenuItem(value: 'Cancelled ❌', child: Text('Cancel')),
+                    
+              
+                  
+                  return Card(
+  margin: const EdgeInsets.all(8),
+  child: Padding(
+    padding: const EdgeInsets.all(8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            Text(
+              'कुल राशि: ₹${ord['totalAmount'] ?? ord['grandTotal'] ?? '0'}', 
+              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const Divider(),
+        if (ord['items'] != null && ord['items'] is List)
+          ...(ord['items'] as List).map((it) {
+            var m = it is Map ? it : {};
+            var imgUrl = m['image'] ?? m['imageUrl'] ?? m['itemImage'] ?? m['photo'] ?? m['img'] ?? m['productImage'] ?? '';
+            
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  if (imgUrl.toString().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          imgUrl.toString(),
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fastfood, size: 40, color: Colors.green),
+                        ),
+                      ),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(right: 10),
+                      child: Icon(Icons.fastfood, size: 40, color: Colors.green),
+                    ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('आइटम: ${m['name'] ?? m['itemName'] ?? 'Item'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('क्वांटिटी: ${m['qty'] ?? m['quantity'] ?? '1'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  if (m['price'] != null)
+                    Text('₹${m['price']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            );
+          }),
+        const Divider(),
+        Text('👤 ग्राहक: ${ord['customerName'] ?? ''} (${ord['customerPhone'] ?? ''})'),
+        const SizedBox(height: 2),
+        Text('📍 पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+    
+      
+
+                    
                           ],
                         ),
                       ),
@@ -1126,7 +1056,25 @@ class _VendorSettingsTabState extends State<VendorSettingsTab> {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(12),
-      children: [
+            children: [
+        // 🟢 यह रहा नया बैंक सेटिंग्स वाला कार्ड (इसे यहाँ डालें)
+        Card(
+  margin: const EdgeInsets.symmetric(vertical: 8),
+  child: ListTile(
+    leading: const Icon(Icons.account_balance, color: Colors.green, size: 28),
+    title: const Text('बैंक खाता विवरण (Bank Details)', style: TextStyle(fontWeight: FontWeight.bold)),
+    subtitle: const Text('अकाउंट नंबर और IFSC कोड मैनेज करें'),
+    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const VendorBankSettingsView()),
+      );
+    },
+  ),
+),
+
+            
         Card(
           color: isOpen ? Colors.green.shade50 : Colors.red.shade50,
           child: SwitchListTile(
