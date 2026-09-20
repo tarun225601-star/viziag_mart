@@ -21,7 +21,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
     _loadInitialOrders();
   }
 
-  // 1. ऐप खुलते ही लोकल मेमोरी से दिखाओ
+  // 1. ऐप खुलते ही लोकल मेमोरी से तुरंत दिखाओ (बिना नेट खर्च किए)
   Future<void> _loadInitialOrders() async {
     setState(() => isLoading = true);
     await CakeDatabase.loadOrdersLocally();
@@ -36,7 +36,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
     _startSmartCountPolling();
   }
 
-  // पूरी लिस्ट लाने के लिए
+  // पूरी लिस्ट केवल जरूरत पर लाने के लिए
   Future<void> _fetchFullOrdersFromFirebase() async {
     try {
       final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
@@ -64,7 +64,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
     } catch (_) {}
   }
 
-  // 2. 5-सेकंड स्मार्ट गिनती (Shallow) पोलिंग - नेट बिल्कुल खर्च नहीं होगा
+  // 2. शून्य नेट खर्च स्मार्ट गिनती (Shallow Poling) - राइडर वाले स्टाइल में
   void _startSmartCountPolling() {
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 5));
@@ -87,7 +87,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
     });
   }
 
-  // केवल नया आर्डर खींचने के लिए
+  // केवल नया वाला आर्डर खींचने के लिए (जीरो वेस्टेज)
   Future<void> _fetchLatestSingleOrder() async {
     try {
       final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json?orderBy="\$key"&limitToLast=1'));
@@ -122,83 +122,41 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
     } catch (_) {}
   }
 
-  // आर्डर स्टेटस अपडेट करने के लिए
-  Future<void> _updateOrderStatus(String firebaseKey, String newStatus) async {
+  // आर्डर स्टेटस अपडेट करने के लिए (वेंडर द्वारा)
+  Future<void> _updateOrderStatus(String firebaseKey, String newStatus, Map<String, dynamic> orderData) async {
     if (firebaseKey.isEmpty) return;
     try {
+      // 1. वेंडर के मेन आर्डर का स्टेटस अपडेट करो
       await http.patch(
         Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$firebaseKey.json'),
-        body: json.encode({'status': newStatus}),
+        body: json.encode({'status': newStatus, 'orderStatus': newStatus}),
       );
+
+      // 2. जब वेंडर 'Accepted' करेगा, तभी आर्डर डिलीवरी राइडर के पास जाएगा
+      if (newStatus == 'Accepted') {
+        final deliveryUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/delivery_orders.json');
+        await http.post(deliveryUri, body: json.encode(orderData));
+      }
+
       for (var ord in allOrders) {
         if (ord['firebaseKey'] == firebaseKey) {
           ord['status'] = newStatus;
+          ord['orderStatus'] = newStatus;
           break;
         }
       }
       await CakeDatabase.saveOrdersLocally();
       setState(() {});
+
+      String msg = newStatus == 'Accepted' ? '✅ आर्डर स्वीकार कर लिया गया और डिलीवरी राइडर को भेज दिया गया!' : '❌ आर्डर रद्द कर दिया गया';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ऑर्डर स्टेटस: $newStatus'), backgroundColor: Colors.green),
+        SnackBar(content: Text(msg), backgroundColor: newStatus == 'Accepted' ? Colors.green : Colors.red),
       );
-    } catch (_) {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('अपडेट विफल!'), backgroundColor: Colors.red),
+        SnackBar(content: Text('अपडेट विफल: $e'), backgroundColor: Colors.red),
       );
     }
-  }
-
-  // 🛡️ फुलन-फानल और अचूक इमेज रेंडरिंग फंक्शन (कभी ग्रे स्क्रीन नहीं आने देगा)
-  Widget _buildBulletproofImage(dynamic imagePath, double width, double height, IconData fallbackIcon) {
-    if (imagePath == null || imagePath.toString().isEmpty) {
-      return _fallbackBox(width, height, fallbackIcon);
-    }
-
-    String pathStr = imagePath.toString();
-
-    // 1. अगर यह Base64 डेटा है
-    if (pathStr.startsWith('data:image') || (pathStr.length > 100 && !pathStr.startsWith('http') && !pathStr.startsWith('/'))) {
-      try {
-        String base64Clean = pathStr.contains(',') ? pathStr.split(',').last : pathStr;
-        return Image.memory(
-          base64Decode(base64Clean),
-          width: width,
-          height: height,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _fallbackBox(width, height, fallbackIcon),
-        );
-      } catch (_) {}
-    }
-
-    // 2. अगर यह इंटरनेट का ऑनलाइन लिंक (URL) है
-    if (pathStr.startsWith('http://') || pathStr.startsWith('https://')) {
-      return Image.network(
-        pathStr,
-        width: width,
-        height: height,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => _fallbackBox(width, height, fallbackIcon),
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return SizedBox(
-            width: width,
-            height: height,
-            child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green)),
-          );
-        },
-      );
-    }
-
-    return _fallbackBox(width, height, fallbackIcon);
-  }
-
-  Widget _fallbackBox(double width, double height, IconData icon) {
-    return Container(
-      width: width,
-      height: height,
-      color: Colors.green.shade50,
-      child: Icon(icon, color: Colors.green, size: width * 0.5),
-    );
   }
 
   @override
@@ -248,39 +206,9 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                       itemCount: allOrders.length,
                       itemBuilder: (context, index) {
                         final order = allOrders[index];
-                        String currentStatus = order['status'] ?? 'Pending';
-                        
-                        // --- स्मार्ट एक्सट्रैक्शन लॉजिक ---
-                        var itemsList = order['items'];
-                        String itemTitle = '';
-                        String? imageUrl;
-                        var quantity = 1;
-
-                        if (itemsList is List && itemsList.isNotEmpty) {
-                          var firstItem = itemsList[0];
-                          if (firstItem is Map) {
-                            itemTitle = firstItem['title'] ?? firstItem['name'] ?? firstItem['productName'] ?? '';
-                            imageUrl = firstItem['image'] ?? firstItem['imageUrl'] ?? firstItem['photo'] ?? firstItem['img'];
-                            quantity = firstItem['qty'] ?? firstItem['quantity'] ?? 1;
-                          }
-                        } else if (itemsList is Map && itemsList.isNotEmpty) {
-                          var firstItem = itemsList.values.first;
-                          if (firstItem is Map) {
-                            itemTitle = firstItem['title'] ?? firstItem['name'] ?? firstItem['productName'] ?? '';
-                            imageUrl = firstItem['image'] ?? firstItem['imageUrl'] ?? firstItem['photo'] ?? firstItem['img'];
-                            quantity = firstItem['qty'] ?? firstItem['quantity'] ?? 1;
-                          }
-                        }
-
-                        if (itemTitle.isEmpty) {
-                          itemTitle = order['title'] ?? order['name'] ?? order['productName'] ?? 'ऑर्डर #${order['orderId'] ?? index + 1}';
-                        }
-                        if (imageUrl == null || imageUrl.isEmpty) {
-                          imageUrl = order['image'] ?? order['imageUrl'] ?? order['photo'] ?? order['img'];
-                        }
-                        if (quantity == 1) {
-                          quantity = order['qty'] ?? order['quantity'] ?? order['count'] ?? 1;
-                        }
+                        String currentStatus = order['status'] ?? order['orderStatus'] ?? 'Pending';
+                        var itemsList = order['items'] is List ? order['items'] as List : [];
+                        var grandTotal = order['grandTotal'] ?? order['totalAmount'] ?? order['price'] ?? 0;
 
                         return Card(
                           elevation: 3,
@@ -291,47 +219,60 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // ऊपर का हिस्सा: आर्डर आईडी और कुल रकम
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      // 🛡️ यहाँ पर पुरानी Image.network की जगह अचूक फंक्शन लगा दिया है
-                                      child: _buildBulletproofImage(imageUrl, 60, 60, Icons.shopping_bag),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            itemTitle.toString(),
-                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'स्थिति: $currentStatus',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: currentStatus == 'Accepted' ? Colors.blue : (currentStatus == 'Delivered' ? Colors.green : Colors.orange),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                    Text(
+                                      'आर्डर #${order['firebaseKey'] != null && order['firebaseKey'].toString().length > 6 ? order['firebaseKey'].toString().substring(0, 6) : (index + 1)}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black54),
                                     ),
                                     Text(
-                                      '₹${order['totalAmount'] ?? order['price'] ?? order['total'] ?? 0}',
-                                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w900, fontSize: 16),
+                                      '₹${grandTotal.toString()}',
+                                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w900, fontSize: 17),
                                     ),
                                   ],
                                 ),
-                                const Divider(height: 20),
+                                const Divider(height: 14),
+
+                                // आर्डर के अंदर के सभी आइटम्स की पूरी लिस्ट
+                                const Text('📦 आर्डर किए गए आइटम्स:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                const SizedBox(height: 6),
+                                ...itemsList.map((it) {
+                                  var itemMap = it is Map ? it : {};
+                                  String itemName = itemMap['name'] ?? itemMap['title'] ?? 'Item';
+                                  var itemQty = itemMap['qty'] ?? itemMap['quantity'] ?? 1;
+                                  var itemPrice = itemMap['price'] ?? 0;
+                                  var itemUnit = itemMap['unit'] ?? '';
+
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 3.0),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            '• $itemName ($itemQty $itemUnit)',
+                                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                          ),
+                                        ),
+                                        Text(
+                                          '₹${(double.tryParse(itemPrice.toString()) ?? 0) * (double.tryParse(itemQty.toString()) ?? 1)}',
+                                          style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+
+                                const Divider(height: 16),
+
+                                // ग्राहक की जानकारी
                                 Row(
                                   children: [
                                     const Icon(Icons.person, size: 14, color: Colors.grey),
                                     const SizedBox(width: 6),
-                                    Text('ग्राहक: ${order['customerName'] ?? order['name'] ?? CakeDatabase.currentCustomerName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                    Text('ग्राहक: ${order['customerName'] ?? CakeDatabase.currentCustomerName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
@@ -339,7 +280,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                                   children: [
                                     const Icon(Icons.phone, size: 14, color: Colors.grey),
                                     const SizedBox(width: 6),
-                                    Text('फोन: ${order['customerPhone'] ?? order['phone'] ?? CakeDatabase.currentUserPhone}', style: const TextStyle(fontSize: 12)),
+                                    Text('फोन: ${order['customerPhone'] ?? CakeDatabase.currentUserPhone}', style: const TextStyle(fontSize: 12)),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
@@ -349,7 +290,7 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        'पता: ${order['customerAddress'] ?? order['address'] ?? CakeDatabase.currentDeliveryAddress}',
+                                        'पता: ${order['customerAddress'] ?? CakeDatabase.currentDeliveryAddress}',
                                         style: const TextStyle(fontSize: 12, color: Colors.black54),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
@@ -358,24 +299,37 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                                   ],
                                 ),
                                 const SizedBox(height: 10),
+
+                                // करंट स्टेटस बैज
                                 Row(
                                   children: [
-                                    Chip(
-                                      label: Text('पैकिंग मात्रा (Qty): $quantity', style: const TextStyle(fontSize: 11)),
-                                      backgroundColor: Colors.green.shade50,
-                                      labelStyle: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
-                                      padding: EdgeInsets.zero,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: currentStatus == 'Accepted' ? Colors.blue.shade50 : (currentStatus == 'Delivered' ? Colors.green.shade50 : Colors.orange.shade50),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'स्थिति: $currentStatus',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: currentStatus == 'Accepted' ? Colors.blue.shade700 : (currentStatus == 'Delivered' ? Colors.green.shade700 : Colors.orange.shade800),
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                                 const Divider(height: 16),
+
+                                // एक्शन बटन्स
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
                                     OutlinedButton.icon(
                                       onPressed: () {
                                         String key = order['firebaseKey'] ?? '';
-                                        _updateOrderStatus(key, 'Rejected');
+                                        _updateOrderStatus(key, 'Rejected', order);
                                       },
                                       icon: const Icon(Icons.close, size: 16, color: Colors.red),
                                       label: const Text('रद्द करें', style: TextStyle(color: Colors.red, fontSize: 12)),
@@ -385,10 +339,10 @@ class _VendorOrdersViewState extends State<VendorOrdersView> {
                                     ElevatedButton.icon(
                                       onPressed: () {
                                         String key = order['firebaseKey'] ?? '';
-                                        _updateOrderStatus(key, 'Accepted');
+                                        _updateOrderStatus(key, 'Accepted', order);
                                       },
                                       icon: const Icon(Icons.check, size: 16, color: Colors.white),
-                                      label: const Text('स्वीकार करें', style: TextStyle(fontSize: 12)),
+                                      label: const Text('स्वीकार करें (राइडर को भेजें)', style: TextStyle(fontSize: 12)),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.green,
                                         foregroundColor: Colors.white,
