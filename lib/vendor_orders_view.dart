@@ -18,9 +18,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
   int _todayAcceptedCount = 0;
   double _todayTotalRevenue = 0.0;
   
-  // 📦 लोकल सेव किए गए पुराने ऑर्डर्स की हिस्ट्री
   List<Map<String, dynamic>> _vendorHistoryList = [];
-
   Map<String, dynamic>? _latestIncomingOrder;
   Set<String> _localSeenOrderIds = {};
 
@@ -34,7 +32,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     _startOrderRefreshTimer();
   }
 
-  // 📂 लोकल मेमोरी से डेटा लोड करना
   Future<void> _loadLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     List<String> savedIds = prefs.getStringList('vendor_seen_order_ids') ?? [];
@@ -50,18 +47,20 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       }
     }
 
-    setState(() {
-      _localSeenOrderIds = savedIds.toSet();
-      _vendorHistoryList = loadedHistory;
-      _todayAcceptedCount = loadedHistory.length;
-      
-      double totalRev = 0.0;
-      for (var ord in loadedHistory) {
-        double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
-        totalRev += amt;
-      }
-      _todayTotalRevenue = totalRev;
-    });
+    if (mounted) {
+      setState(() {
+        _localSeenOrderIds = savedIds.toSet();
+        _vendorHistoryList = loadedHistory;
+        _todayAcceptedCount = loadedHistory.length;
+        
+        double totalRev = 0.0;
+        for (var ord in loadedHistory) {
+          double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
+          totalRev += amt;
+        }
+        _todayTotalRevenue = totalRev;
+      });
+    }
   }
 
   Future<void> _saveSeenOrderIds() async {
@@ -69,21 +68,21 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     await prefs.setStringList('vendor_seen_order_ids', _localSeenOrderIds.toList());
   }
 
-  // 💾 आर्डर को लोकल हिस्ट्री में सेव करना
   Future<void> _saveOrderToVendorHistory(Map<String, dynamic> order) async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _vendorHistoryList.insert(0, order);
-      _todayAcceptedCount = _vendorHistoryList.length;
-      
-      double totalRev = 0.0;
-      for (var ord in _vendorHistoryList) {
-        double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
-        totalRev += amt;
-      }
-      _todayTotalRevenue = totalRev;
-    });
-
+    if (mounted) {
+      setState(() {
+        _vendorHistoryList.insert(0, order);
+        _todayAcceptedCount = _vendorHistoryList.length;
+        
+        double totalRev = 0.0;
+        for (var ord in _vendorHistoryList) {
+          double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
+          totalRev += amt;
+        }
+        _todayTotalRevenue = totalRev;
+      });
+    }
     await prefs.setString('vendor_orders_history', json.encode(_vendorHistoryList));
   }
 
@@ -127,7 +126,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     }
   }
 
-  // सिर्फ लेटेस्ट आर्डर चेक करने के लिए (जीरो नेट वेस्टेज)
+  // 🚀 सुपर-ऑप्टिमाइज्ड फेच: बिना बात के स्क्रीन रीफ्रेश (setState) नहीं करेगा जिससे हैंग होना बंद हो जाएगा
   Future<void> _fetchOnlyLatestIncomingOrder() async {
     try {
       final uri = Uri.parse('$_firebaseRestUrl/orders.json?orderBy="\$key"&limitToLast=1');
@@ -137,6 +136,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
         Map<String, dynamic> decodedData = json.decode(res.body);
         bool hasNewOrder = false;
         Map<String, dynamic>? fetchedOrder;
+        String? fetchedOrderId;
 
         decodedData.forEach((key, value) {
           if (value is Map) {
@@ -144,9 +144,9 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
             order['orderId'] = key;
 
             String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
-            // केवल पेंडिंग आर्डर्स दिखाओ जो वेंडर ने अभी एक्सेप्ट न किए हों
             if (status.toLowerCase() == 'pending') {
               fetchedOrder = order;
+              fetchedOrderId = key;
 
               if (!_localSeenOrderIds.contains(key)) {
                 _localSeenOrderIds.add(key);
@@ -158,7 +158,10 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
 
         _saveSeenOrderIds();
 
-        if (mounted) {
+        String? currentOrderId = _latestIncomingOrder?['orderId']?.toString();
+
+        // सिर्फ तभी setState होगा जब सच में आर्डर बदला हो या नया आया हो
+        if (mounted && currentOrderId != fetchedOrderId) {
           setState(() {
             _latestIncomingOrder = fetchedOrder;
           });
@@ -168,7 +171,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
           }
         }
       } else {
-        if (mounted) {
+        if (mounted && _latestIncomingOrder != null) {
           setState(() {
             _latestIncomingOrder = null;
           });
@@ -194,11 +197,9 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     }
   }
 
-  // 1️⃣ वेंडर आर्डर स्वीकार करेगा और उसे डिलीवरी राइडर के पास भेजेगा
   Future<void> _acceptAndForwardOrder(Map<String, dynamic> order) async {
     String orderId = order['orderId'];
     try {
-      // स्टेटस 'Accepted' करो
       await http.patch(
         Uri.parse('$_firebaseRestUrl/orders/$orderId.json'),
         body: json.encode({
@@ -207,7 +208,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
         }),
       );
 
-      // डिलीवरी वाले नोड में भेज दो ताकि राइडर को मिल जाए
       await http.post(
         Uri.parse('$_firebaseRestUrl/delivery_orders.json'),
         body: json.encode(order),
@@ -219,16 +219,17 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       order['orderStatus'] = 'Accepted';
       await _saveOrderToVendorHistory(order);
 
-      setState(() {
-        _latestIncomingOrder = null; 
-      });
+      if (mounted) {
+        setState(() {
+          _latestIncomingOrder = null; 
+        });
+      }
     } catch (e) {
       debugPrint("Vendor accept error: $e");
       _showMsg('एरर: $e', Colors.red);
     }
   }
 
-  // 2️⃣ वेंडर आर्डर रद्द करेगा
   Future<void> _rejectOrder(Map<String, dynamic> order) async {
     String orderId = order['orderId'];
     try {
@@ -242,15 +243,16 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       HapticFeedback.mediumImpact();
       _showMsg('❌ आर्डर रद्द कर दिया गया!', Colors.red);
 
-      setState(() {
-        _latestIncomingOrder = null;
-      });
+      if (mounted) {
+        setState(() {
+          _latestIncomingOrder = null;
+        });
+      }
     } catch (e) {
       debugPrint("Vendor reject error: $e");
     }
   }
 
-  // 📜 पुरानी वेंडर हिस्ट्री देखने का डायलॉग
   void _showVendorHistoryDialog() {
     showDialog(
       context: context,
@@ -294,11 +296,13 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     );
   }
 
-  // 🔍 पूरा विवरण देखने वाला डायलॉग (बिना शॉप एड्रेस के)
   void _showOrderDetailsDialog(Map<String, dynamic> order) {
     String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
     String phone = order['customerPhone'] ?? order['phone'] ?? '';
-    String address = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
+    
+    // 📍 केवल और केवल ग्राहक का पता (शॉप एड्रेस पूरी तरह से ब्लॉक)
+    String address = order['customerAddress'] ?? order['deliveryAddress'] ?? 'ग्राहक का पता उपलब्ध नहीं';
+    
     String orderTimeStr = _formatOrderTime(order['timestamp'] ?? order['createdAt'] ?? order['time']);
     
     var itemsRaw = order['items'];
@@ -323,7 +327,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
             children: [
               Text('🕒 ऑर्डर का समय: $orderTimeStr', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
               const Divider(),
-              const Text('📍 डिलीवरी (ग्राहक का पता):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+              const Text('📍 डिलीवरी (केवल ग्राहक का पता):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
               Text(address, style: const TextStyle(fontSize: 13)),
               const Divider(),
               Text('📞 मोबाइल नंबर: $phone'),
@@ -372,7 +376,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // डैशबोर्ड कार्ड (कुल स्वीकार आर्डर और कुल कमाई)
             Row(
               children: [
                 Expanded(
@@ -413,8 +416,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
               ],
             ),
             const SizedBox(height: 20),
-
-            // नया आने वाला आर्डर सेक्शन
             const Text('🔔 नया इनकमिंग आर्डर', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
             const SizedBox(height: 10),
 
@@ -448,7 +449,14 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('आर्डर #${_latestIncomingOrder!['orderId']?.toString().substring(0, 6) ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                              // 🛡️ सुरक्षित आईडी बिल्डर ताकी कभी लाल स्क्रीन न आए
+                              Builder(
+                                builder: (context) {
+                                  String rawId = _latestIncomingOrder!['orderId']?.toString() ?? 'N/A';
+                                  String safeId = rawId.length > 6 ? rawId.substring(0, 6) : rawId;
+                                  return Text('आर्डर #$safeId', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey));
+                                },
+                              ),
                               const Chip(
                                 label: Text('नया आर्डर 🔔', style: TextStyle(color: Colors.white, fontSize: 11)),
                                 backgroundColor: Colors.red,
@@ -458,8 +466,17 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
                           const Divider(height: 20),
                           Text('👤 ग्राहक: ${_latestIncomingOrder!['customerName'] ?? _latestIncomingOrder!['name'] ?? 'Customer'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
-                          // 📍 केवल ग्राहक का पता
-                          Text('📍 पता: ${_latestIncomingOrder!['customerAddress'] ?? _latestIncomingOrder!['deliveryAddress'] ?? _latestIncomingOrder!['address'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                          
+                          // 📍 केवल और केवल ग्राहक का पता (शॉप एड्रेस पूरी तरह से ब्लॉक)
+                          Builder(
+                            builder: (context) {
+                              String customerAddress = _latestIncomingOrder!['customerAddress'] ?? 
+                                                       _latestIncomingOrder!['deliveryAddress'] ?? 
+                                                       'ग्राहक का पता उपलब्ध नहीं';
+                              return Text('📍 पता: $customerAddress', style: const TextStyle(fontSize: 13, color: Colors.black54));
+                            },
+                          ),
+
                           const SizedBox(height: 6),
                           Text('📞 फोन: ${_latestIncomingOrder!['customerPhone'] ?? _latestIncomingOrder!['phone'] ?? ''}', style: const TextStyle(fontSize: 13)),
                           const SizedBox(height: 6),
