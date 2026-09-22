@@ -24,7 +24,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
   int _todayCompletedCount = 0;
   double _todayTotalEarnings = 0.0;
   
-  // 📦 लोकल सेव किए गए पुराने डिलीवर ऑर्डर्स की लिस्ट
   List<Map<String, dynamic>> _deliveredHistoryList = [];
 
   final _phoneController = TextEditingController();
@@ -48,14 +47,10 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     _loadLocalData();
   }
 
-  // 📂 लोकल मेमोरी से सीन ऑर्डर्स और पुरानी हिस्ट्री लोड करना
   Future<void> _loadLocalData() async {
     final prefs = await SharedPreferences.getInstance();
-    
-    // सीन आर्डर आईडी
     List<String> savedIds = prefs.getStringList('seen_order_ids') ?? [];
     
-    // पुरानी डिलीवर हिस्ट्री
     String? historyString = prefs.getString('delivered_orders_history');
     List<Map<String, dynamic>> loadedHistory = [];
     if (historyString != null && historyString.isNotEmpty) {
@@ -72,7 +67,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       _deliveredHistoryList = loadedHistory;
       _todayCompletedCount = loadedHistory.length; 
       
-      // कुल कमाई कैलकुलेट करना
       double totalEarn = 0.0;
       for (var ord in loadedHistory) {
         double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
@@ -87,11 +81,10 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     await prefs.setStringList('seen_order_ids', _localSeenOrderIds.toList());
   }
 
-  // 💾 डिलीवर आर्डर को लोकल मेमोरी में हमेशा के लिए SharedPreferences में सेव करना
   Future<void> _saveOrderToLocalHistory(Map<String, dynamic> order) async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _deliveredHistoryList.insert(0, order); // सबसे ऊपर नया जोड़ें
+      _deliveredHistoryList.insert(0, order);
       _todayCompletedCount = _deliveredHistoryList.length;
       
       double totalEarn = 0.0;
@@ -102,7 +95,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       _todayTotalEarnings = totalEarn;
     });
 
-    // SharedPreferences में JSON स्ट्रिंग बनाकर सेव करें
     await prefs.setString('delivered_orders_history', json.encode(_deliveredHistoryList));
   }
 
@@ -377,7 +369,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       HapticFeedback.mediumImpact();
       _showMsg('🎉 डिलीवरी सफलतापूर्वक पूरी हो गई! कमाई जुड़ गई है।', Colors.green);
       
-      // 📦 आर्डर को लोकल हिस्ट्री और SharedPreferences में सेव करें
       order['orderStatus'] = newStatus;
       await _saveOrderToLocalHistory(order);
 
@@ -390,7 +381,6 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     }
   }
 
-  // 📜 पुराने डिलीवर ऑर्डर्स की हिस्ट्री देखने वाला डायलॉग
   void _showHistoryDialog() {
     showDialog(
       context: context,
@@ -576,21 +566,21 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 📊 स्टेटस कार्ड
             Row(
               children: [
                 Expanded(
                   child: Card(
-                    color: Colors.blue.shade50,
+                    color: Colors.green.shade50,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('डिलीवर ऑर्डर्स', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blue)),
-                          const SizedBox(height: 6),
-                          Text('$_todayCompletedCount', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.blue)),
+                          const Text('आज के पूरे आर्डर', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text('$_todayCompletedCount', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
                         ],
                       ),
                     ),
@@ -599,14 +589,15 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Card(
-                    color: Colors.green.shade50,
+                    color: Colors.blue.shade50,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('कुल कमाई', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
-                          const SizedBox(height: 6),
-                          Text('₹${_todayTotalEarnings.toStringAsFixed(1)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+                          const Text('आज की कुल कमाई', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text('₹$_todayTotalEarnings', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
                         ],
                       ),
                     ),
@@ -615,28 +606,37 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
               ],
             ),
             const SizedBox(height: 20),
-
-            // 📦 लेटेस्ट ऑर्डर सेक्शन
-            const Text('📦 नया उपलब्ध ऑर्डर', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('📦 नया उपलब्ध आर्डर', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.green),
+                  onPressed: _fetchOnlyLatestOrderRest,
+                  tooltip: 'रिफ्रेश करें',
+                ),
+              ],
+            ),
             const SizedBox(height: 10),
-
             _latestOrder == null
                 ? Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.all(30),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
-                    child: const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.hourglass_empty, size: 48, color: Colors.grey),
-                          SizedBox(height: 10),
-                          Text('फिलहाल कोई नया ऑर्डर नहीं है। नया ऑर्डर आने पर घंटी बजेगी!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-                        ],
-                      ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(Icons.hourglass_empty, size: 40, color: Colors.grey),
+                        SizedBox(height: 10),
+                        Text('अभी कोई नया आर्डर नहीं है...\nनया आर्डर आने पर ऑटोमेटिक अलर्ट बजेगा!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                      ],
                     ),
                   )
                 : Card(
-                    elevation: 4,
+                    elevation: 3,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -646,48 +646,50 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('ऑर्डर ID: ${_latestOrder!['orderId']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(6)),
-                                child: const Text('नया ऑर्डर', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                              Text('आर्डर आईडी: ${_latestOrder!['orderId']?.toString().substring(0, 6) ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                              Chip(
+                                label: Text(_latestOrder!['orderStatus'] ?? 'Pending', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                backgroundColor: Colors.orange,
                               ),
                             ],
                           ),
                           const Divider(),
-                          Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'Customer'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          Text('👤 ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'Customer'}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
-                          Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['deliveryAddress'] ?? _latestOrder!['address'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                          const SizedBox(height: 10),
+                          Text('📍 पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['deliveryAddress'] ?? _latestOrder!['address'] ?? 'पता उपलब्ध नहीं'}', style: const TextStyle(color: Colors.black87)),
+                          const SizedBox(height: 4),
+                          Text('💰 अमाउंट: ₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                          const SizedBox(height: 12),
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('अमाउंट: ₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
-                              TextButton.icon(
-                                onPressed: () => _showOrderDetailsDialog(_latestOrder!),
-                                icon: const Icon(Icons.info_outline, size: 16),
-                                label: const Text('पूरा विवरण देखें'),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showOrderDetailsDialog(_latestOrder!),
+                                  icon: const Icon(Icons.visibility),
+                                  label: const Text('पूरा विवरण देखें'),
+                                ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           if (!_isAcceptedByRider)
                             SizedBox(
                               width: double.infinity,
-                              height: 45,
-                              child: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                              
-                              child: const Text('ऑर्डर स्वीकार करें (Accept)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                                onPressed: _acceptOrder,
+                                child: const Text('आर्डर स्वीकार करें (Accept)'),
+                              ),
                             )
                           else
                             SizedBox(
-  width: double.infinity,
-  child: ElevatedButton(
-    onPressed: _acceptOrder, // ✅ सही: ElevatedButton के पास onPressed होता है
-    child: const Text('आर्डर स्वीकार करें'),
-  ),
-), 
-
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+                                onPressed: () => _updateOrderStatus(_latestOrder!, 'Delivered'),
+                                child: const Text('डिलीवरी पूरी हुई (Mark as Delivered)'),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -698,35 +700,32 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     );
   }
 
-
   Widget _buildLoginForm() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('राइडर लॉगिन', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
         TextField(
           controller: _phoneController,
           keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', prefixIcon: Icon(Icons.phone)),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _passwordController,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड (या एडमिन tarun#1)', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'पासवर्ड', prefixIcon: Icon(Icons.lock)),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
           onPressed: _isLoading ? null : _loginRider,
-          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('लॉगिन करें'),
+          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('लॉगिन करें', style: TextStyle(fontSize: 16)),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         TextButton(
           onPressed: () => setState(() => _isRegistering = true),
-          child: const Text('नया राइडर रजिस्ट्रेशन करें'),
+          child: const Text('नया अकाउंट बनाएं? रजिस्टर करें'),
         ),
       ],
     );
@@ -737,36 +736,34 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('नया राइडर रजिस्ट्रेशन', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
         TextField(
           controller: _regNameController,
-          decoration: const InputDecoration(labelText: 'पूरा नाम', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'पूरा नाम', prefixIcon: Icon(Icons.person)),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         TextField(
           controller: _regPhoneController,
           keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', prefixIcon: Icon(Icons.phone)),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         TextField(
           controller: _regVehicleController,
-          decoration: const InputDecoration(labelText: 'वाहन का नाम/नंबर (जैसे: Bike - DL 1234)', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'वाहन (जैसे: बाइक/स्कूटी नंबर)', prefixIcon: Icon(Icons.directions_bike)),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         TextField(
           controller: _regPasswordController,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', prefixIcon: Icon(Icons.lock)),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
           onPressed: _isLoading ? null : _registerRider,
-          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('रजिस्टर करें'),
+          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('रजिस्टर करें', style: TextStyle(fontSize: 16)),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         TextButton(
           onPressed: () => setState(() => _isRegistering = false),
           child: const Text('पहले से अकाउंट है? लॉगिन करें'),
