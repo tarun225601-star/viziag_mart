@@ -573,4 +573,228 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 1,
-          title: Text(_isRegistering ? '📝 नया राइडर रजिस्ट्रेशन' : '🚴‍♂️ राइडर पोर्टल
+          title: Text(_isRegistering ? '📝 नया राइडर रजिस्ट्रेशन' : '🚴‍♂️ राइडर पोर्टल लॉगिन', 
+            style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: _isRegistering ? _buildRegisterForm() : _buildLoginForm(),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_isAdminLoggedIn) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F9FA),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 1,
+          title: const Text('👑 एडमिन: राइडर अप्रूवल पैनल', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.red),
+              onPressed: () {
+                _orderRefreshTimer?.cancel();
+                setState(() { _isLoggedIn = false; _isAdminLoggedIn = false; });
+              },
+              tooltip: 'लॉग आउट',
+            ),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Colors.green))
+            : _pendingRiders.isEmpty
+                ? const Center(child: Text('कोई नया राइडर अप्रूवल के लिए पेंडिंग नहीं है!', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _pendingRiders.length,
+                    itemBuilder: (context, index) {
+                      var rider = _pendingRiders[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          title: Text(rider['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text('फोन: ${rider['phone']}\nवाहन: ${rider['vehicle']}'),
+                          isThreeLine: true,
+                          trailing: ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                            onPressed: () => _approveRider(rider['riderId']),
+                            child: const Text('Approve'),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        title: const Text('🚴‍♂️ स्मार्ट लाइव ऑर्डर (Zero Data)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 12)),
+        actions: [
+          // 📜 पुरानी हिस्ट्री देखने का बटन
+          IconButton(
+            icon: const Icon(Icons.history, color: Colors.purple),
+            onPressed: _showHistoryDialog,
+            tooltip: 'पुरानी आर्डर हिस्ट्री देखें',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.green),
+            onPressed: _fetchOnlyLatestOrderRest,
+            tooltip: 'मैनुअल रिफ्रेश करें',
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.red),
+            onPressed: () {
+              _orderRefreshTimer?.cancel();
+              setState(() { _isLoggedIn = false; _isAcceptedByRider = false; });
+            },
+            tooltip: 'लॉग आउट',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.green.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    const Text('कुल डिलीवर आर्डर्स', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('$_todayCompletedCount आर्डर्स', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                  ],
+                ),
+                Container(height: 30, width: 1, color: Colors.green.shade200),
+                Column(
+                  children: [
+                    const Text('कुल कमाई (Earnings)', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('₹$_todayTotalEarnings', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _fetchOnlyLatestOrderRest,
+              child: _latestOrder == null
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.delivery_dining, size: 70, color: Colors.grey.shade400),
+                                const SizedBox(height: 12),
+                                const Text('फिलहाल कोई नया आर्डर नहीं है!\n(पुराना आर्डर हिस्ट्री में सुरक्षित है)', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      children: [
+                        Card(
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('📦 नया डिलीवरी आर्डर', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 16)),
+                                    Text(
+                                      '₹${_latestOrder!['grandTotal'] ?? _latestOrder!['totalAmount'] ?? '0'}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(height: 20),
+                                
+                                Row(
+                                  children: [
+                                    const Icon(Icons.access_time, size: 16, color: Colors.purple),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'समय: ${_formatOrderTime(_latestOrder!['timestamp'] ?? _latestOrder!['createdAt'] ?? _latestOrder!['time'])}',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.purple),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+
+                                Text('ग्राहक: ${_latestOrder!['customerName'] ?? _latestOrder!['name'] ?? 'N/A'}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 6),
+                                Text('फोन: ${_latestOrder!['customerPhone'] ?? _latestOrder!['phone'] ?? 'उपलब्ध नहीं'}', style: const TextStyle(fontSize: 14)),
+                                const SizedBox(height: 6),
+                                Text('पता: ${_latestOrder!['customerAddress'] ?? _latestOrder!['deliveryAddress'] ?? 'पता नहीं'}', style: const TextStyle(fontSize: 14, color: Colors.black54)),
+                                const SizedBox(height: 12),
+                                OutlinedButton.icon(
+                                  onPressed: () => _showOrderDetailsDialog(_latestOrder!),
+                                  icon: const Icon(Icons.visibility),
+                                  label: const Text('पूरा आर्डर और आइटम्स देखें'),
+                                ),
+                                const SizedBox(height: 16),
+                                
+                                if (!_isAcceptedByRider)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade800, foregroundColor: Colors.white),
+                                      onPressed: _acceptOrder,
+                                      icon: const Icon(Icons.check_circle_outline),
+                                      label: const Text('आर्डर स्वीकार करें (Accept Order)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                    ),
+                                  )
+                                else
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                                      onPressed: () => _updateOrderStatus(_latestOrder!, 'Delivered'),
+                                      icon: const Icon(Icons.done_all),
+                                      label: const Text('डिलीवरी पूरी हुई (Mark as Delivered)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
