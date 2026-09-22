@@ -23,7 +23,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
   final List<String> categories = ['All', 'Fresh Fruits', 'Vegetables', 'Organic Items', 'Daily Essentials'];
 
   // कार्ट में आइटम्स की क्वांटिटी स्टोर करने के लिए (productId -> quantity)
-  final Map<String, int> _cartQuantities = {};
+  final Map<String, double> _cartQuantities = {};
 
   @override
   void initState() {
@@ -32,8 +32,8 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
   }
 
   // कुल आइटम्स की गिनती
-  int get totalCartItems {
-    int total = 0;
+  double get totalCartItems {
+    double total = 0;
     _cartQuantities.forEach((key, qty) => total += qty);
     return total;
   }
@@ -109,7 +109,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     }
   }
 
-  // आइटम की मात्रा बढ़ाने का फंक्शन
+  // आइटम की मात्रा बढ़ाने का फंक्शन (डिफ़ॉल्ट 1 जोड़ेगा)
   void _incrementQty(Map<String, dynamic> prod) {
     bool isShopOpen = CakeDatabase.bakeryShop['isOpen'] ?? true;
     if (!isShopOpen) {
@@ -117,59 +117,109 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
       return;
     }
 
-    int stock = (prod['stock'] ?? 1) is int ? (prod['stock'] ?? 1) : int.tryParse(prod['stock'].toString()) ?? 1;
+    double stock = (prod['stock'] ?? 50) is num ? (prod['stock'] ?? 50).toDouble() : double.tryParse(prod['stock'].toString()) ?? 50.0;
     String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
-    int currentQty = _cartQuantities[prodId] ?? 0;
+    double currentQty = _cartQuantities[prodId] ?? 0.0;
 
     if (currentQty >= stock) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ स्टॉक limit पूरी हो गई है!'), backgroundColor: Colors.orange));
       return;
     }
 
-    setState(() {
-      _cartQuantities[prodId] = currentQty + 1;
-      
-      String prodVendorPhone = prod['vendorPhone'] ?? prod['phone'] ?? '';
-      String shopAddress = CakeDatabase.bakeryShop['address'] ?? 'Faridabad';
-      String shopName = CakeDatabase.bakeryShop['shopName'] ?? 'Tarun Fruit Shop';
-
-      var existingIndex = CakeDatabase.cartItems.indexWhere((item) => item['name'] == prod['name']);
-      if (existingIndex >= 0) {
-        CakeDatabase.cartItems[existingIndex]['qty'] = (_cartQuantities[prodId] ?? 1).toDouble();
-      } else {
-        CakeDatabase.cartItems.add({
-          'name': prod['name'] ?? 'Item',
-          'price': prod['price'] ?? 0.0,
-          'unit': prod['unit'] ?? 'Kg',
-          'qty': 1.0,
-          'image': prod['image'] ?? '',
-          'shopName': shopName,
-          'shopAddress': shopAddress,
-          'vendorPhone': prodVendorPhone,
-        });
-      }
-    });
+    double newQty = currentQty + 1.0;
+    _updateCartWithQuantity(prod, newQty);
   }
 
   // आइटम की मात्रा घटाने का फंक्शन
   void _decrementQty(Map<String, dynamic> prod) {
     String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
-    int currentQty = _cartQuantities[prodId] ?? 0;
+    double currentQty = _cartQuantities[prodId] ?? 0.0;
 
     if (currentQty > 0) {
-      setState(() {
-        if (currentQty == 1) {
-          _cartQuantities.remove(prodId);
-          CakeDatabase.cartItems.removeWhere((item) => item['name'] == prod['name']);
-        } else {
-          _cartQuantities[prodId] = currentQty - 1;
-          var existingIndex = CakeDatabase.cartItems.indexWhere((item) => item['name'] == prod['name']);
-          if (existingIndex >= 0) {
-            CakeDatabase.cartItems[existingIndex]['qty'] = (_cartQuantities[prodId] ?? 1).toDouble();
-          }
-        }
-      });
+      double newQty = currentQty <= 1.0 ? 0.0 : currentQty - 1.0;
+      _updateCartWithQuantity(prod, newQty);
     }
+  }
+
+  // ✏️ कस्टमर द्वारा लिखकर क्वांटिटी सेट करने का डायलॉग
+  void _showCustomQuantityDialog(Map<String, dynamic> prod) {
+    String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
+    double currentQty = _cartQuantities[prodId] ?? 1.0;
+    final TextEditingController qtyController = TextEditingController(text: currentQty.toString());
+    String unit = prod['unit'] ?? 'Kg';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: Text('${prod['name']} की मात्रा लिखें', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: qtyController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: 'कितना चाहिए? ($unit में दर्ज करें)',
+              hintText: 'जैसे: 2.5 या 5',
+              suffixText: unit,
+              prefixIcon: const Icon(Icons.edit, color: Colors.green),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('रद्द करें', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+              onPressed: () {
+                double? enteredQty = double.tryParse(qtyController.text.trim());
+                if (enteredQty == null || enteredQty < 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया सही संख्या लिखें!'), backgroundColor: Colors.orange));
+                  return;
+                }
+                Navigator.pop(context);
+                _updateCartWithQuantity(prod, enteredQty);
+              },
+              child: const Text('लागू करें (Apply)'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // कार्ट और स्टेट को अपडेट करने का मुख्य फंक्शन
+  void _updateCartWithQuantity(Map<String, dynamic> prod, double newQty) {
+    String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
+    
+    setState(() {
+      if (newQty <= 0) {
+        _cartQuantities.remove(prodId);
+        CakeDatabase.cartItems.removeWhere((item) => item['name'] == prod['name']);
+      } else {
+        _cartQuantities[prodId] = newQty;
+        String prodVendorPhone = prod['vendorPhone'] ?? prod['phone'] ?? '';
+        String shopAddress = CakeDatabase.bakeryShop['address'] ?? 'Faridabad';
+        String shopName = CakeDatabase.bakeryShop['shopName'] ?? 'Tarun Fruit Shop';
+
+        var existingIndex = CakeDatabase.cartItems.indexWhere((item) => item['name'] == prod['name']);
+        if (existingIndex >= 0) {
+          CakeDatabase.cartItems[existingIndex]['qty'] = newQty;
+        } else {
+          CakeDatabase.cartItems.add({
+            'name': prod['name'] ?? 'Item',
+            'price': prod['price'] ?? 0.0,
+            'unit': prod['unit'] ?? 'Kg',
+            'qty': newQty,
+            'image': prod['image'] ?? '',
+            'shopName': shopName,
+            'shopAddress': shopAddress,
+            'vendorPhone': prodVendorPhone,
+          });
+        }
+      }
+    });
   }
 
   // कार्ट देखने और आइटम्स की पूरी लिस्ट दिखाने के लिए बॉटम शीट
@@ -212,7 +262,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                               var item = CakeDatabase.cartItems[index];
                               return ListTile(
                                 title: Text(item['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                subtitle: Text('₹${item['price']} x ${item['qty']}'),
+                                subtitle: Text('₹${item['price']} x ${item['qty']} ${item['unit'] ?? 'Kg'}'),
                                 trailing: Text('₹${(item['price'] * item['qty']).toStringAsFixed(1)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
                               );
                             },
@@ -235,7 +285,6 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
                         onPressed: () {
                           Navigator.pop(context);
-                          // यहाँ चेक करेंगे कि पहले से एड्रेस सेव है या नया भरना है
                           _checkAndProceedCheckout();
                         },
                         child: const Text('ऑर्डर आगे बढ़ाएं (Proceed to Checkout)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
@@ -250,22 +299,20 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     );
   }
 
-  // 🔍 चेक फंक्शन: अगर पहले से डिटेल्स सेव हैं तो डायरेक्ट ऑर्डर लेगा, वरना फॉर्म दिखाएगा
+  // 🔍 चेक फंक्शन: अगर पहले से एड्रेस सेव है तो डायरेक्ट ऑर्डर लेगा, वरना फॉर्म दिखाएगा
   void _checkAndProceedCheckout() {
     String savedName = CakeDatabase.bakeryShop['savedCustomerName'] ?? '';
     String savedPhone = CakeDatabase.bakeryShop['savedCustomerPhone'] ?? '';
     String savedAddress = CakeDatabase.bakeryShop['savedCustomerAddress'] ?? '';
 
-    // अगर पहले से एड्रेस और फोन नंबर मौजूद है, तो दोबारा पूछने की जरूरत नहीं, सीधा आर्डर फाइनल करो
     if (savedName.isNotEmpty && savedPhone.isNotEmpty && savedAddress.isNotEmpty) {
       _confirmFinalOrderAndPushToCloud(savedName, savedPhone, savedAddress);
     } else {
-      // अगर नया कस्टमर है या डिटेल्स नहीं हैं, तो पॉप-अप खोलकर भरवाओ
       _showCustomerDetailsDialog();
     }
   }
 
-  // 📝 कस्टमर का नाम, फोन नंबर और डिलीवरी एड्रेस लेने के लिए पॉप-अप डायलॉग (केवल नए या बिना सेव डेटा वाले यूजर के लिए)
+  // 📝 कस्टमर का नाम, फोन नंबर और डिलीवरी एड्रेस लेने के लिए पॉप-अप डायलॉग
   void _showCustomerDetailsDialog() {
     final TextEditingController nameController = TextEditingController(text: CakeDatabase.bakeryShop['savedCustomerName'] ?? '');
     final TextEditingController phoneController = TextEditingController(text: CakeDatabase.bakeryShop['savedCustomerPhone'] ?? '');
@@ -319,13 +366,11 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                   return;
                 }
 
-                // भविष्य के लिए लोकल डेटाबेस में सेव कर लो ताकि बार-बार न पूछना पड़े
                 CakeDatabase.bakeryShop['savedCustomerName'] = name;
                 CakeDatabase.bakeryShop['savedCustomerPhone'] = phone;
                 CakeDatabase.bakeryShop['savedCustomerAddress'] = address;
 
                 Navigator.pop(context);
-                // फाइनल आर्डर सर्वर पर भेजना
                 _confirmFinalOrderAndPushToCloud(name, phone, address);
               },
               child: const Text('ऑर्डर कन्फर्म करें'),
@@ -336,7 +381,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     );
   }
 
-  // 🚀 फाइनल ऑर्डर कन्फर्मेशन और क्लाउड (फायरबेस) पर वेंडर + राइडर दोनों के लिए भेजने का फंक्शन
+  // 🚀 फाइनल ऑर्डर कन्फर्मेशन और क्लाउड पर भेजने का फंक्शन
   Future<void> _confirmFinalOrderAndPushToCloud(String customerName, String customerPhone, String customerAddress) async {
     if (CakeDatabase.cartItems.isEmpty) return;
 
@@ -345,14 +390,13 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     String shopAddress = shop['address'] ?? 'Faridabad';
     double totalAmount = totalCartAmount;
 
-    // आर्डर का डेटा पैकेट जहाँ दुकान का पता और ग्राहक का पता बिल्कुल अलग-अलग हैं
     Map<String, dynamic> finalOrderData = {
       'customerName': customerName,
       'customerPhone': customerPhone,
-      'customerAddress': customerAddress, // ग्राहक का डिलीवरी पता
+      'customerAddress': customerAddress,
       'shopName': shopName,
-      'shopAddress': shopAddress,         // दुकान का पिकअप पता
-      'items': List.from(CakeDatabase.cartItems), // कार्ट आइटम्स की कॉपी
+      'shopAddress': shopAddress,
+      'items': List.from(CakeDatabase.cartItems),
       'grandTotal': totalAmount,
       'totalAmount': totalAmount,
       'paymentMode': 'COD',
@@ -362,16 +406,13 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     };
 
     try {
-      // 1. फायरबेस के मुख्य 'orders' नोड पर भेजना (राइडर ऐप के लिए)
       final riderUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json');
       final riderResponse = await http.post(riderUri, body: json.encode(finalOrderData));
 
-      // 2. वेंडर के सेक्शन के लिए भी अलग से आर्डर नोड पर भेजना (वेंडर डैशबोर्ड के लिए)
       final vendorUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_orders.json');
       await http.post(vendorUri, body: json.encode(finalOrderData));
 
       if (riderResponse.statusCode == 200 || riderResponse.statusCode == 201) {
-        // लोकल कार्ट और क्वांटिटी को साफ़ करना
         setState(() {
           _cartQuantities.clear();
           CakeDatabase.cartItems.clear();
@@ -498,7 +539,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: categories.map((cat) => Padding(
+                  categories.map((cat) => Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
                       label: Text(cat, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
@@ -532,16 +573,17 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        childAspectRatio: 0.72,
+                        childAspectRatio: 0.70,
                       ),
                       itemCount: filtered.length,
                       itemBuilder: (context, index) {
                         var prod = filtered[index];
                         String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
-                        int qty = _cartQuantities[prodId] ?? 0;
+                        double qty = _cartQuantities[prodId] ?? 0.0;
                         double price = prod['price'] ?? 0.0;
-                        int stock = (prod['stock'] ?? 10) is int ? (prod['stock'] ?? 10) : int.tryParse(prod['stock'].toString()) ?? 10;
+                        double stock = (prod['stock'] ?? 50) is num ? (prod['stock'] ?? 50).toDouble() : double.tryParse(prod['stock'].toString()) ?? 50.0;
                         bool isOutOfStock = stock <= 0;
+                        String unit = prod['unit'] ?? 'Kg';
 
                         return Card(
                           elevation: 2,
@@ -576,11 +618,11 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                   children: [
                                     Text(prod['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                     const SizedBox(height: 2),
-                                    Text('₹$price / ${prod['unit'] ?? 'Kg'}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                                    Text('₹$price / $unit', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
                                     const SizedBox(height: 6),
                                     isOutOfStock
                                       ? const SizedBox(width: double.infinity, child: Text('Stock खत्म', textAlign: TextAlign.center, style: TextStyle(color: Colors.red, fontSize: 11)))
-                                      : qty == 0
+                                      : qty == 0.0
                                         ? SizedBox(
                                             width: double.infinity,
                                             height: 30,
@@ -594,17 +636,29 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: [
                                               IconButton(
-                                                icon: const Icon(Icons.remove_circle, color: Colors.red, size: 22),
+                                                icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
                                                 onPressed: () => _decrementQty(prod),
                                                 padding: EdgeInsets.zero,
                                                 constraints: const BoxConstraints(),
                                               ),
-                                              Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                                child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                              // 👇 इस पर क्लिक करके कस्टमर सीधे टाइप कर सकता है (जैसे 5 किलो, 4 दर्जन)
+                                              InkWell(
+                                                onTap: () => _showCustomQuantityDialog(prod),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    border: Border.all(color: Colors.green.shade300),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    color: Colors.green.shade50,
+                                                  ),
+                                                  child: Text(
+                                                    '${qty % 1 == 0 ? qty.toInt() : qty} $unit',
+                                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.green.shade800),
+                                                  ),
+                                                ),
                                               ),
                                               IconButton(
-                                                icon: const Icon(Icons.add_circle, color: Colors.green, size: 22),
+                                                icon: const Icon(Icons.add_circle, color: Colors.green, size: 20),
                                                 onPressed: () => _incrementQty(prod),
                                                 padding: EdgeInsets.zero,
                                                 constraints: const BoxConstraints(),
@@ -622,7 +676,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
             ],
           ),
 
-          // नीचे फ्लोटिंग कार्ट बार (अगर कार्ट में कुछ है तो दिखेगा)
+          // नीचे फ्लोटिंग कार्ट बार
           if (totalCartItems > 0)
             Positioned(
               left: 16,
@@ -642,7 +696,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('$totalCartItems Items | ₹$totalCartAmount', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text('${totalCartItems % 1 == 0 ? totalCartItems.toInt() : totalCartItems} Items | ₹$totalCartAmount', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                         const Text('कर और डिलीवरी शामिल', style: TextStyle(color: Colors.white70, fontSize: 9)),
                       ],
                     ),
