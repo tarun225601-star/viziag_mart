@@ -539,7 +539,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  categories.map((cat) => Padding(
+                  children: categories.map((cat) => Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
                       label: Text(cat, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
@@ -690,7 +690,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.between,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
