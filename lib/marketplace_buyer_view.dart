@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'database_models.dart';
 import 'image_picker_helper.dart';
 
@@ -29,36 +28,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
   @override
   void initState() {
     super.initState();
-    _loadSavedCustomerData();
     _loadInstantDataAndFetch();
-  }
-
-  // 💾 लोकल स्टोरेज से कस्टमर का सेव्ड एड्रेस लोड करना
-  Future<void> _loadSavedCustomerData() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      CakeDatabase.bakeryShop['savedCustomerName'] = prefs.getString('savedCustomerName') ?? '';
-      CakeDatabase.bakeryShop['savedCustomerPhone'] = prefs.getString('savedCustomerPhone') ?? '';
-      CakeDatabase.bakeryShop['savedCustomerAddress'] = prefs.getString('savedCustomerAddress') ?? '';
-    } catch (e) {
-      debugPrint("Error loading saved customer data: $e");
-    }
-  }
-
-  // 💾 कस्टमर का डेटा परमानेंट सेव करना
-  Future<void> _saveCustomerDataLocally(String name, String phone, String address) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('savedCustomerName', name);
-      await prefs.setString('savedCustomerPhone', phone);
-      await prefs.setString('savedCustomerAddress', address);
-      
-      CakeDatabase.bakeryShop['savedCustomerName'] = name;
-      CakeDatabase.bakeryShop['savedCustomerPhone'] = phone;
-      CakeDatabase.bakeryShop['savedCustomerAddress'] = address;
-    } catch (e) {
-      debugPrint("Error saving customer data: $e");
-    }
   }
 
   // कुल आइटम्स की गिनती
@@ -105,8 +75,6 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
             CakeDatabase.bakeryShop = Map<String, dynamic>.from(
               decodedShop.map((key, value) => MapEntry(key.toString(), value))
             );
-            // रीलोड के बाद भी सेव्ड कस्टमर डेटा बनाए रखें
-            _loadSavedCustomerData();
           });
         }
       }
@@ -141,7 +109,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     }
   }
 
-  // आइटम की मात्रा बढ़ाने का फंक्शन
+  // आइटम की मात्रा बढ़ाने का फंक्शन (डिफ़ॉल्ट 1 जोड़ेगा)
   void _incrementQty(Map<String, dynamic> prod) {
     bool isShopOpen = CakeDatabase.bakeryShop['isOpen'] ?? true;
     if (!isShopOpen) {
@@ -331,7 +299,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     );
   }
 
-  // 🔍 चेक फंक्शन: देखिएगा कि एड्रेस सेव है या नहीं
+  // 🔍 चेक फंक्शन: अगर पहले से एड्रेस सेव है तो डायरेक्ट ऑर्डर लेगा, वरना फॉर्म दिखाएगा
   void _checkAndProceedCheckout() {
     String savedName = CakeDatabase.bakeryShop['savedCustomerName'] ?? '';
     String savedPhone = CakeDatabase.bakeryShop['savedCustomerPhone'] ?? '';
@@ -340,15 +308,15 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     if (savedName.isNotEmpty && savedPhone.isNotEmpty && savedAddress.isNotEmpty) {
       _confirmFinalOrderAndPushToCloud(savedName, savedPhone, savedAddress);
     } else {
-      _showCustomerDetailsDialog(savedName, savedPhone, savedAddress);
+      _showCustomerDetailsDialog();
     }
   }
 
   // 📝 कस्टमर का नाम, फोन नंबर और डिलीवरी एड्रेस लेने के लिए पॉप-अप डायलॉग
-  void _showCustomerDetailsDialog(String existingName, String existingPhone, String existingAddress) {
-    final TextEditingController nameController = TextEditingController(text: existingName);
-    final TextEditingController phoneController = TextEditingController(text: existingPhone);
-    final TextEditingController addressController = TextEditingController(text: existingAddress);
+  void _showCustomerDetailsDialog() {
+    final TextEditingController nameController = TextEditingController(text: CakeDatabase.bakeryShop['savedCustomerName'] ?? '');
+    final TextEditingController phoneController = TextEditingController(text: CakeDatabase.bakeryShop['savedCustomerPhone'] ?? '');
+    final TextEditingController addressController = TextEditingController(text: CakeDatabase.bakeryShop['savedCustomerAddress'] ?? '');
 
     showDialog(
       context: context,
@@ -386,7 +354,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-              onPressed: () async {
+              onPressed: () {
                 String name = nameController.text.trim();
                 String phone = phoneController.text.trim();
                 String address = addressController.text.trim();
@@ -398,10 +366,11 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                   return;
                 }
 
-                // 💾 शेयर प्रेफरेंस में परमानेंट सेव करना
-                await _saveCustomerDataLocally(name, phone, address);
-                
-                if (mounted) Navigator.pop(context);
+                CakeDatabase.bakeryShop['savedCustomerName'] = name;
+                CakeDatabase.bakeryShop['savedCustomerPhone'] = phone;
+                CakeDatabase.bakeryShop['savedCustomerAddress'] = address;
+
+                Navigator.pop(context);
                 _confirmFinalOrderAndPushToCloud(name, phone, address);
               },
               child: const Text('ऑर्डर कन्फर्म करें'),
@@ -421,10 +390,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     String shopAddress = shop['address'] ?? 'Faridabad';
     double totalAmount = totalCartAmount;
 
-    String uniqueOrderId = "ORD_${DateTime.now().millisecondsSinceEpoch}";
-
     Map<String, dynamic> finalOrderData = {
-      'orderId': uniqueOrderId,
       'customerName': customerName,
       'customerPhone': customerPhone,
       'customerAddress': customerAddress,
@@ -436,34 +402,26 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
       'paymentMode': 'COD',
       'orderStatus': 'Pending',
       'status': 'Pending',
-      'orderTime': DateTime.now().toIso8601String(),
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     };
 
     try {
-      final riderUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders/$uniqueOrderId.json');
-      final riderResponse = await http.put(riderUri, body: json.encode(finalOrderData));
+      final riderUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json');
+      final riderResponse = await http.post(riderUri, body: json.encode(finalOrderData));
 
-      final vendorUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_orders/$uniqueOrderId.json');
-      await http.put(vendorUri, body: json.encode(finalOrderData));
+      final vendorUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_orders.json');
+      await http.post(vendorUri, body: json.encode(finalOrderData));
 
       if (riderResponse.statusCode == 200 || riderResponse.statusCode == 201) {
-        if (CakeDatabase.localOrdersCache == null) {
-          CakeDatabase.localOrdersCache = [];
-        }
-        
         setState(() {
-          CakeDatabase.localOrdersCache.insert(0, finalOrderData);
           _cartQuantities.clear();
           CakeDatabase.cartItems.clear();
         });
-        
-        await CakeDatabase.saveOrdersLocally();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('🎉 आपका ऑर्डर सफलतापूर्वक बुक हो गया!', style: TextStyle(fontWeight: FontWeight.bold)),
+              content: Text('🎉 फाइनल ऑर्डर सफलतापूर्वक वेंडर और डिलीवरी राइडर को भेज दिया गया!', style: TextStyle(fontWeight: FontWeight.bold)),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 4),
             ),
@@ -484,7 +442,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
 
   @override
   Widget build(BuildContext context) {
-    var shop =CakeDatabase.bakeryShop;
+    var shop = CakeDatabase.bakeryShop;
     bool isShopOpen = shop['isOpen'] ?? true;
     String shopAddress = (shop['address'] ?? 'Faridabad').toString().toLowerCase();
     bool isLocalFaridabadShop = shopAddress.contains(_targetCity) || shopAddress.isEmpty;
@@ -504,16 +462,6 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA), 
-      appBar: AppBar(
-        backgroundColor: Colors.green.shade700,
-        title: const Text('🛍️ मार्केटप्लेस (फ्रूट & वेजिटेबल)', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _fetchShopProfileAndProducts,
-          )
-        ],
-      ),
       body: Stack(
         children: [
           ListView(
@@ -529,156 +477,234 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                     children: [
                       Icon(Icons.store_mall_directory, color: Colors.white),
                       SizedBox(width: 8),
-                      Text('🔴 दुकान अभी बंद (Closed) है!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      Text('🔴 दुकान अभी बंद (Closed) है!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                     ],
                   ),
                 ),
-              // Search Bar
+
               TextField(
                 controller: _searchController,
                 onChanged: (val) => setState(() => _searchQuery = val),
                 decoration: InputDecoration(
-                  hintText: 'फल या सब्जियां खोजें...',
-                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'फल, सब्ज़ी या आइटम खोजें (फरीदाबाद)...',
+                  prefixIcon: const Icon(Icons.search, color: Colors.green),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() { _searchController.clear(); _searchQuery = ''; }))
+                      : null,
                   filled: true,
                   fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
                 ),
               ),
               const SizedBox(height: 10),
-              // Categories
-              SizedBox(
-                height: 40,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: categories.length,
-                  itemBuilder: (context, index) {
-                    String cat = categories[index];
-                    bool isSelected = selectedCategory == cat;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(cat),
-                        selected: isSelected,
-                        selectedColor: Colors.green.shade700,
-                        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontWeight: FontWeight.bold),
-                        onSelected: (bool selected) => setState(() => selectedCategory = cat),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (_isLoadingCloud && CakeDatabase.productInventory.isEmpty)
-                const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
-              else if (filtered.isEmpty)
-                const Center(child: Padding(padding: EdgeInsets.all(40), child: Text('कोई सामान उपलब्ध नहीं है।', style: TextStyle(color: Colors.grey))))
-              else
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.75,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                  ),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    var prod = filtered[index];
-                    String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
-                    double qty = _cartQuantities[prodId] ?? 0.0;
-                    String unit = prod['unit'] ?? 'Kg';
-                    String imgUrl = prod['image'] ?? '';
 
-                    return Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                  boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 6, offset: const Offset(0, 2))],
+                ),
+                child: Column(
+                  children: [
+                    if ((shop['bannerPhotoPath'] ?? '').toString().isNotEmpty)
+                      ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(12)), child: buildShopOrProdImage(shop['bannerPhotoPath'], 110, double.infinity, Icons.store)),
+                    Padding(
+                      padding: const EdgeInsets.all(10.0),
+                      child: Row(
                         children: [
+                          ClipRRect(borderRadius: BorderRadius.circular(8), child: buildShopOrProdImage(shop['shopPhotoPath'] ?? shop['ownerPhotoPath'], 45, 45, Icons.store)),
+                          const SizedBox(width: 10),
                           Expanded(
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                              child: imgUrl.isNotEmpty
-                                  ? Image.network(imgUrl, width: double.infinity, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.grey.shade200, child: const Icon(Icons.broken_image)))
-                                  : Container(color: Colors.grey.shade200, child: const Center(child: Icon(Icons.image, color: Colors.grey))),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(prod['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                Text(shop['shopName'] ?? 'Tarun Fruit & Vegetable Shop', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 13)),
                                 const SizedBox(height: 2),
-                                Text('₹${prod['price']} / $unit', style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold, fontSize: 13)),
-                                const SizedBox(height: 8),
-                                qty == 0
-                                    ? SizedBox(
-                                        width: double.infinity,
-                                        height: 32,
-                                        child: ElevatedButton(
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: EdgeInsets.zero),
-                                          onPressed: () => _incrementQty(prod),
-                                          child: const Text('जोड़ें (Add)', style: TextStyle(fontSize: 12)),
-                                        ),
-                                      )
-                                    : Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          IconButton(
-                                            constraints: const BoxConstraints(),
-                                            padding: EdgeInsets.zero,
-                                            icon: const Icon(Icons.remove_circle, color: Colors.red, size: 28),
-                                            onPressed: () => _decrementQty(prod),
-                                          ),
-                                          InkWell(
-                                            onTap: () => _showCustomQuantityDialog(prod),
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                              child: Text('$qty $unit', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline)),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            constraints: const BoxConstraints(),
-                                            padding: EdgeInsets.zero,
-                                            icon: const Icon(Icons.add_circle, color: Colors.green, size: 28),
-                                            onPressed: () => _incrementQty(prod),
-                                          ),
-                                        ],
-                                      ),
+                                Text('📍 ${shop['address'] ?? 'Faridabad'}', style: const TextStyle(fontSize: 10, color: Colors.black54)),
                               ],
                             ),
                           ),
+                          IconButton(icon: const Icon(Icons.sync, color: Colors.green), onPressed: _fetchShopProfileAndProducts),
                         ],
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(height: 10),
+              
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: categories.map((cat) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(cat, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      selected: selectedCategory == cat,
+                      selectedColor: Colors.green.shade700,
+                      backgroundColor: Colors.white,
+                      labelStyle: TextStyle(color: selectedCategory == cat ? Colors.white : Colors.black87),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: selectedCategory == cat ? Colors.transparent : Colors.grey.shade300)),
+                      onSelected: (_) => setState(() => selectedCategory = cat),
+                    ),
+                  )).toList(),
+                ),
+              ),
+              if (_isLoadingCloud) const LinearProgressIndicator(color: Colors.green),
+              if (_errorMessage.isNotEmpty) Padding(padding: const EdgeInsets.all(8.0), child: Text(_errorMessage, style: const TextStyle(color: Colors.red, fontSize: 11))),
+              const SizedBox(height: 10),
+
+              filtered.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(40),
+                      child: Center(
+                        child: Text(
+                          !isLocalFaridabadShop ? '⚠️ यह दुकान फरीदाबाद के बाहर की है।' : 'कोई प्रोडक्ट नहीं मिला',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.black45, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  : GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 0.70,
+                      ),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        var prod = filtered[index];
+                        String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
+                        double qty = _cartQuantities[prodId] ?? 0.0;
+                        double price = prod['price'] ?? 0.0;
+                        double stock = (prod['stock'] ?? 50) is num ? (prod['stock'] ?? 50).toDouble() : double.tryParse(prod['stock'].toString()) ?? 50.0;
+                        bool isOutOfStock = stock <= 0;
+                        String unit = prod['unit'] ?? 'Kg';
+
+                        return Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: buildShopOrProdImage(prod['image'], double.infinity, double.infinity, Icons.fastfood),
+                                      ),
+                                    ),
+                                    if (isOutOfStock)
+                                      Container(
+                                        color: Colors.black54,
+                                        child: const Center(
+                                          child: Text('Out of Stock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(prod['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    const SizedBox(height: 2),
+                                    Text('₹$price / $unit', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                                    const SizedBox(height: 6),
+                                    isOutOfStock
+                                      ? const SizedBox(width: double.infinity, child: Text('Stock खत्म', textAlign: TextAlign.center, style: TextStyle(color: Colors.red, fontSize: 11)))
+                                      : qty == 0.0
+                                        ? SizedBox(
+                                            width: double.infinity,
+                                            height: 30,
+                                            child: ElevatedButton(
+                                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: EdgeInsets.zero),
+                                              onPressed: () => _incrementQty(prod),
+                                              child: const Text('जोड़ें (Add)', style: TextStyle(fontSize: 11)),
+                                            ),
+                                          )
+                                        : Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                                                onPressed: () => _decrementQty(prod),
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                              ),
+                                              // 👇 इस पर क्लिक करके कस्टमर सीधे टाइप कर सकता है (जैसे 5 किलो, 4 दर्जन)
+                                              InkWell(
+                                                onTap: () => _showCustomQuantityDialog(prod),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    border: Border.all(color: Colors.green.shade300),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    color: Colors.green.shade50,
+                                                  ),
+                                                  child: Text(
+                                                    '${qty % 1 == 0 ? qty.toInt() : qty} $unit',
+                                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.green.shade800),
+                                                  ),
+                                                ),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.add_circle, color: Colors.green, size: 20),
+                                                onPressed: () => _incrementQty(prod),
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                              ),
+                                            ],
+                                          ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
             ],
           ),
+
+          // नीचे फ्लोटिंग कार्ट बार
           if (totalCartItems > 0)
             Positioned(
               left: 16,
               right: 16,
               bottom: 16,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade800,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
                 ),
-                onPressed: _showCartBottomSheet,
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Icon(Icons.shopping_cart),
-                    const SizedBox(width: 8),
-                    Text('कार्ट देखें (${totalCartItems.toStringAsFixed(0)} Items) • ₹$totalCartAmount', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('${totalCartItems % 1 == 0 ? totalCartItems.toInt() : totalCartItems} Items | ₹$totalCartAmount', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        const Text('कर और डिलीवरी शामिल', style: TextStyle(color: Colors.white70, fontSize: 9)),
+                      ],
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.green.shade800),
+                      onPressed: _showCartBottomSheet,
+                      child: const Text('कार्ट देखें (View Cart)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
                   ],
                 ),
               ),
