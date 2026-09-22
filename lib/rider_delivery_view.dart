@@ -681,12 +681,13 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                             )
                           else
                             SizedBox(
-                              width: double.infinity,
-                              height: 45,
-                              child: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                              onPressed: () => _updateOrderStatus(_latestOrder!, 'Delivered'),
-                              child: const Text('डिलीवरी पूरी हुई (Mark as Delivered)', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ),
+  width: double.infinity,
+  child: ElevatedButton(
+    onPressed: _acceptOrder, // ✅ सही: ElevatedButton के पास onPressed होता है
+    child: const Text('आर्डर स्वीकार करें'),
+  ),
+
+
                         ],
                       ),
                     ),
