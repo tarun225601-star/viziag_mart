@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'shared_preferences_helper.dart'; // सुनिश्चित करें कि आपकी SharedPreferences की फाइल या इम्पोर्ट सही हो
 import 'database_models.dart';
 
 class CartAndOrdersView extends StatefulWidget {
@@ -10,287 +11,280 @@ class CartAndOrdersView extends StatefulWidget {
   State<CartAndOrdersView> createState() => _CartAndOrdersViewState();
 }
 
-class _CartAndOrdersViewState extends State<CartAndOrdersView> {
-  bool _isFetching = false;
+class _CartAndOrdersViewState extends State<CartAndOrdersView> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    if (CakeDatabase.localOrdersCache == null) {
-      CakeDatabase.localOrdersCache = [];
-    }
-    // ऐप खुलते ही एक बार क्लाउड से लेटेस्ट स्टेटस सिंक कर लेंगे
-    _syncOrdersFromServer();
+    _tabController = TabController(length: 2, vsync: this);
+    _loadLocalOrdersAndFetch();
   }
 
-  // 🔄 सर्वर से आर्डर्स का लेटेस्ट स्टेटस चेक करने का फंक्शन
-  Future<void> _syncOrdersFromServer() async {
-    if (_isFetching) return;
-    setState(() => _isFetching = true);
-
+  Future<void> _loadLocalOrdersAndFetch() async {
+    setState(() => _isLoading = true);
     try {
-      final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'));
-      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> cloudOrders = json.decode(res.body);
-        
-        // लोकल cache को क्लाउड के लेटेस्ट स्टेटस के साथ अपडेट करना
-        setState(() {
-          for (int i = 0; i < CakeDatabase.localOrdersCache.length; i++) {
-            String? localId = CakeDatabase.localOrdersCache[i]['orderId']?.toString();
-            if (localId != null && cloudOrders.containsKey(localId)) {
-              var cloudData = cloudOrders[localId];
-              if (cloudData is Map) {
-                CakeDatabase.localOrdersCache[i]['orderStatus'] = cloudData['orderStatus'] ?? cloudData['status'] ?? CakeDatabase.localOrdersCache[i]['orderStatus'];
-                CakeDatabase.localOrdersCache[i]['status'] = cloudData['status'] ?? cloudData['orderStatus'] ?? CakeDatabase.localOrdersCache[i]['status'];
-              }
+      // लोकल स्टोरेज से ऑर्डर्स लोड करें
+      await CakeDatabase.loadOrdersLocally();
+    } catch (e) {
+      debugPrint("Error loading local orders: $e");
+    }
+    
+    // क्लाउड से भी लेटेस्ट ऑर्डर्स सिंक कर लें
+    await _fetchOrdersFromCloud();
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _fetchOrdersFromCloud() async {
+    try {
+      final response = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json')).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200 && response.body != 'null' && response.body.isNotEmpty) {
+        var decoded = json.decode(response.body);
+        List<Map<String, dynamic>> cloudOrders = [];
+        if (decoded is Map) {
+          decoded.forEach((key, value) {
+            if (value is Map) {
+              var order = Map<String, dynamic>.from(value.map((k, v) => MapEntry(k.toString(), v)));
+              cloudOrders.add(order);
             }
-          }
+          });
+        }
+        
+        // नए ऑर्डर्स को ऊपर दिखाने के लिए सॉर्ट करें
+        cloudOrders.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
+        
+        setState(() {
+          CakeDatabase.localOrdersCache = cloudOrders;
         });
         await CakeDatabase.saveOrdersLocally();
       }
     } catch (e) {
-      debugPrint("Orders sync error: $e");
-    } finally {
-      if (mounted) setState(() => _isFetching = false);
-    }
-  }
-
-  bool _isToday(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return false;
-    try {
-      DateTime orderDate = DateTime.parse(dateStr);
-      DateTime now = DateTime.now();
-      return orderDate.year == now.year && orderDate.month == now.month && orderDate.day == now.day;
-    } catch (e) {
-      return false;
+      debugPrint("Error fetching cloud orders: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    int todayOrdersCount = 0;
-    double todayOrdersTotal = 0.0;
-
-    for (var ord in CakeDatabase.localOrdersCache) {
-      // अगर orderTime नहीं है तो timestamp चेक कर लेंगे
-      String timeCheck = ord['orderTime'] ?? ord['timestamp']?.toString() ?? '';
-      if (_isToday(timeCheck)) {
-        todayOrdersCount++;
-        todayOrdersTotal += double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? 0).toString()) ?? 0.0;
-      }
-    }
-
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text('📦 मेरी आर्डर हिस्ट्री & स्टेटस', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.green.shade700,
+        title: const Text('📦 मेरे ऑर्डर्स और कार्ट', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(text: '🛒 मेरी कार्ट (Cart)'),
+            Tab(text: '📋 बुक किए गए ऑर्डर्स (Orders)'),
+          ],
+        ),
         actions: [
           IconButton(
-            icon: _isFetching 
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.refresh, color: Colors.white),
-            tooltip: 'स्टेटस रिफ्रेश करें',
-            onPressed: _syncOrdersFromServer,
-          ),
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadLocalOrdersAndFetch,
+          )
         ],
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF334155)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Column(
-                  children: [
-                    const Text('आज के कुल आर्डर', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text('$todayOrdersCount', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Container(height: 30, width: 1, color: Colors.grey.shade700),
-                Column(
-                  children: [
-                    const Text('आज की कुल राशि', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text('₹${todayOrdersTotal.toInt()}', style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Container(height: 30, width: 1, color: Colors.grey.shade700),
-                Column(
-                  children: [
-                    const Text('कुल इतिहास', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text('${CakeDatabase.localOrdersCache.length}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: CakeDatabase.localOrdersCache.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(20.0),
-                      child: Text('आपने अभी तक कोई नया आर्डर नहीं दिया है!\nशॉप से जाकर आर्डर बुक करें।', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)),
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _syncOrdersFromServer,
-                    child: ListView.builder(
-                      itemCount: CakeDatabase.localOrdersCache.length,
-                      itemBuilder: (context, index) {
-                        var ord = CakeDatabase.localOrdersCache[index];
-                        String status = (ord['orderStatus'] ?? ord['status'] ?? 'Pending').toString();
-                        var orderTotal = ord['grandTotal'] ?? ord['totalAmount'] ?? 0;
-                        var itemsList = ord['items'] as List<dynamic>? ?? [];
-                        
-                        String rawTime = ord['orderTime'] ?? '';
-                        String formattedDateTime = '';
-                        if (rawTime.isNotEmpty) {
-                          try {
-                            DateTime dt = DateTime.parse(rawTime);
-                            formattedDateTime = "${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year} | ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                          } catch (e) {
-                            formattedDateTime = rawTime.length >= 16 ? rawTime.substring(0, 16).replaceAll('T', ' ') : rawTime;
-                          }
-                        } else if (ord['timestamp'] != null) {
-                          try {
-                            DateTime dt = DateTime.fromMillisecondsSinceEpoch(int.parse(ord['timestamp'].toString()));
-                            formattedDateTime = "${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year} | ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                          } catch (_) {}
-                        }
-
-                        bool isTodayOrder = _isToday(rawTime) || ord['timestamp'] != null;
-
-                        return Card(
-                          color: const Color(0xFF1E293B),
-                          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? 'New'}', 
-                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)
-                                        ),
-                                        if (isTodayOrder) ...[
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: Colors.green,
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: const Text('आज (Today)', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                    Text(
-                                      '₹${orderTotal.toString()}', 
-                                      style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 16)
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                if (formattedDateTime.isNotEmpty)
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.calendar_today, size: 13, color: Colors.amberAccent),
-                                      const SizedBox(width: 4),
-                                      Text(formattedDateTime, style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.w500)),
-                                    ],
-                                  ),
-                                const SizedBox(height: 6),
-                                Text('दुकान: ${ord['shopName'] ?? 'Viziag Mart'}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                                Text('डिलीवरी पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', 
-                                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                                const Divider(color: Colors.white24, height: 16),
-                                ...itemsList.map((it) {
-                                  var m = it is Map ? it : {};
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 2.0),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('• ${m['name'] ?? 'Item'} (x${m['qty'] ?? 1})', style: const TextStyle(color: Colors.white, fontSize: 13)),
-                                        Text('₹${(double.tryParse(m['price'].toString()) ?? 0) * (double.tryParse(m['qty'].toString()) ?? 1)}', 
-                                            style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                                      ],
-                                    ),
-                                  );
-                                }),
-                                const SizedBox(height: 12),
-                                
-                                // 🟢 शानदार लाइव स्टेटस बैनर जो ग्राहक को बताएगा कि आर्डर कहाँ तक पहुँचा है
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: _getStatusColor(status).withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: _getStatusColor(status)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(_getStatusIcon(status), color: _getStatusColor(status), size: 18),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _getStatusText(status),
-                                          style: TextStyle(color: _getStatusColor(status), fontWeight: FontWeight.bold, fontSize: 13),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-          ),
+          _buildCartTab(),
+          _buildOrdersTab(),
         ],
       ),
     );
   }
 
-  Color _getStatusColor(String status) {
-    String s = status.toLowerCase();
-    if (s.contains('accept')) return Colors.greenAccent;
-    if (s.contains('deliver')) return Colors.tealAccent;
-    if (s.contains('reject') || s.contains('cancel')) return Colors.redAccent;
-    return Colors.amberAccent; // Pending के लिए
+  // 🛒 कार्ट टैब व्यू
+  Widget _buildCartTab() {
+    if (CakeDatabase.cartItems.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.remove_shopping_cart, size: 64, color: Colors.grey),
+            SizedBox(height: 12),
+            Text('आपकी कार्ट खाली है!', style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
+    }
+
+    double totalAmount = 0;
+    for (var item in CakeDatabase.cartItems) {
+      double price = (item['price'] ?? 0.0) is num ? (item['price'] ?? 0.0).toDouble() : double.tryParse(item['price'].toString()) ?? 0.0;
+      double qty = (item['qty'] ?? 1.0) is num ? (item['qty'] ?? 1.0).toDouble() : double.tryParse(item['qty'].toString()) ?? 1.0;
+      totalAmount += (price * qty);
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: CakeDatabase.cartItems.length,
+            itemBuilder: (context, index) {
+              var item = CakeDatabase.cartItems[index];
+              double price = (item['price'] ?? 0.0).toDouble();
+              double qty = (item['qty'] ?? 1.0).toDouble();
+              String unit = item['unit'] ?? 'Kg';
+
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: (item['image'] ?? '').toString().isNotEmpty
+                        ? Image.network(item['image'], width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.image))
+                        : Container(width: 50, height: 50, color: Colors.grey.shade200, child: const Icon(Icons.shopping_bag)),
+                  ),
+                  title: Text(item['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('₹$price x $qty $unit'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('₹${(price * qty).toStringAsFixed(1)}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green.shade700, fontSize: 15)),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                        onPressed: () {
+                          setState(() {
+                            CakeDatabase.cartItems.removeAt(index);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0, -2))],
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('कुल राशि (Grand Total):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('₹${totalAmount.toStringAsFixed(1)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green.shade700)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  onPressed: () {
+                    // यहाँ से आप चेकआउट/ऑर्डर प्लेसमेंट स्क्रीन पर जा सकते हैं या सीधे आर्डर कन्फर्म कर सकते हैं
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया मार्केटप्लेस व्यू से ऑर्डर फाइनल करें!')));
+                  },
+                  child: const Text('ऑर्डर पूरा करें', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
-  IconData _getStatusIcon(String status) {
-    String s = status.toLowerCase();
-    if (s.contains('accept')) return Icons.check_circle_outline;
-    if (s.contains('deliver')) return Icons.delivery_dining;
-    if (s.contains('reject') || s.contains('cancel')) return Icons.cancel_outlined;
-    return Icons.hourglass_top_rounded; // Pending
-  }
+  // 📋 ऑर्डर्स टैब व्यू (यहाँ नए ऑर्डर्स लाल/डार्क शेड में दिखेंगे)
+  Widget _buildOrdersTab() {
+    List orders = CakeDatabase.localOrdersCache ?? [];
 
-  String _getStatusText(String status) {
-    String s = status.toLowerCase();
-    if (s.contains('accept')) return '✅ वेंडर द्वारा आर्डर स्वीकार कर लिया गया है!';
-    if (s.contains('deliver')) return '🚀 आर्डर डिलीवरी के लिए निकल चुका है!';
-    if (s.contains('reject') || s.contains('cancel')) return '❌ यह आर्डर रद्द कर दिया गया है।';
-    return '⏳ पेंडिंग: वेंडर के अप्रूवल का इंतज़ार है...';
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (orders.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.assignment_outlined, size: 64, color: Colors.grey),
+            SizedBox(height: 12),
+            Text('अभी तक कोई ऑर्डर नहीं किया गया है!', style: TextStyle(fontSize: 15, color: Colors.grey, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: orders.length,
+      itemBuilder: (context, index) {
+        var order = orders[index];
+        String orderId = order['orderId'] ?? 'N/A';
+        String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
+        double totalAmt = (order['grandTotal'] ?? order['totalAmount'] ?? 0.0).toDouble();
+        List items = order['items'] ?? [];
+        String customerName = order['customerName'] ?? 'Customer';
+        String address = order['customerAddress'] ?? 'Faridabad';
+
+        // 🔴 निर्देशानुसार: नया या पेंडिंग ऑर्डर लाल/डार्क शेड में हाईलाइट होगा
+        bool isPending = status.toLowerCase() == 'pending';
+
+        return Card(
+          elevation: 3,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          // अगर ऑर्डर पेंडिंग है तो कार्ड का बॉर्डर या हल्का शेड लाल रहेगा
+          color: isPending ? Colors.red.shade50 : Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('ऑर्डर ID: $orderId', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isPending ? Colors.red.shade700 : Colors.green.shade700,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        status.toUpperCase(),
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                Text('ग्राहक: $customerName', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                Text('पता: $address', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                const SizedBox(height: 6),
+                Text('सामग्री (${items.length} आइटम्स):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black54)),
+                ...items.map<Widget>((it) => Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 2),
+                  child: Text('• ${it['name']} (x${it['qty']} ${it['unit'] ?? 'Kg'}) - ₹${(it['price'] * it['qty']).toStringAsFixed(1)}', style: const TextStyle(fontSize: 12)),
+                )),
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('कुल भुगतान:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text('₹${totalAmt.toStringAsFixed(1)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isPending ? Colors.red.shade800 : Colors.green.shade700)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
