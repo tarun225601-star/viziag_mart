@@ -686,7 +686,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
     onPressed: _acceptOrder, // ✅ सही: ElevatedButton के पास onPressed होता है
     child: const Text('आर्डर स्वीकार करें'),
   ),
-
+), 
 
                         ],
                       ),
@@ -697,6 +697,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
       ),
     );
   }
+
 
   Widget _buildLoginForm() {
     return Column(
