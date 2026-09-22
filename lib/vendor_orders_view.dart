@@ -184,7 +184,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
 
   void _startOrderRefreshTimer() {
     _orderRefreshTimer?.cancel();
-    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
+    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 120), (timer) {
       if (mounted) {
         _fetchOnlyLatestIncomingOrder();
       }
