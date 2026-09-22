@@ -18,7 +18,6 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
   
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  final String _targetCity = 'faridabad';
 
   final List<String> categories = ['All', 'Fresh Fruits', 'Vegetables', 'Organic Items', 'Daily Essentials'];
 
@@ -90,9 +89,15 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                 value.map((k, v) => MapEntry(k.toString(), v))
               );
               item['firebaseKey'] = key.toString();
+              
+              // मल्टी-वेंडर और इमेज की सही मैपिंग
               item['shopId'] = item['shopId'] ?? item['vendorPhone'] ?? 'tarun_fruit_shop';
               item['shopName'] = item['shopName'] ?? 'Tarun Fruit Shop';
               item['shopAddress'] = item['shopAddress'] ?? 'sector 89a ajronda sabji mandi faridabad';
+              
+              // इमेज की अलग-अलग संभावित की (keys) को हैंडल करना
+              item['image'] = item['image'] ?? item['imageUrl'] ?? item['img'] ?? '';
+
               if (item['price'] != null) item['price'] = (item['price'] as num).toDouble();
               fetchedList.add(item);
             }
@@ -193,14 +198,15 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
     setState(() {
       if (newQty <= 0) {
         _cartQuantities.remove(prodId);
-        CakeDatabase.cartItems.removeWhere((item) => item['name'] == prod['name']);
+        CakeDatabase.cartItems.removeWhere((item) => item['name'] == prod['name'] && item['shopId'] == prod['shopId']);
       } else {
         _cartQuantities[prodId] = newQty;
         String shopName = prod['shopName'] ?? 'Tarun Fruit Shop';
         String shopAddress = prod['shopAddress'] ?? 'Faridabad';
         String vendorPhone = prod['shopId'] ?? '';
+        String imageUrl = prod['image'] ?? '';
 
-        var existingIndex = CakeDatabase.cartItems.indexWhere((item) => item['name'] == prod['name']);
+        var existingIndex = CakeDatabase.cartItems.indexWhere((item) => item['name'] == prod['name'] && item['shopId'] == vendorPhone);
         if (existingIndex >= 0) {
           CakeDatabase.cartItems[existingIndex]['qty'] = newQty;
         } else {
@@ -209,9 +215,10 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
             'price': prod['price'] ?? 0.0,
             'unit': prod['unit'] ?? 'Kg',
             'qty': newQty,
-            'image': prod['image'] ?? '',
+            'image': imageUrl,
             'shopName': shopName,
             'shopAddress': shopAddress,
+            'shopId': vendorPhone,
             'vendorPhone': vendorPhone,
           });
         }
@@ -258,6 +265,9 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
                             itemBuilder: (context, index) {
                               var item = CakeDatabase.cartItems[index];
                               return ListTile(
+                                leading: item['image'] != null && item['image'].toString().isNotEmpty
+                                    ? ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(item['image'], width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image)))
+                                    : const Icon(Icons.image, size: 40),
                                 title: Text(item['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                                 subtitle: Text('₹${item['price']} x ${item['qty']} ${item['unit'] ?? 'Kg'} (${item['shopName'] ?? ''})'),
                                 trailing: Text('₹${(item['price'] * item['qty']).toStringAsFixed(1)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
@@ -421,7 +431,6 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
 
   @override
   Widget build(BuildContext context) {
-    // 🔍 प्रोडक्ट्स को दुकान (Shop/Vendor) के हिसाब से ग्रुप और सर्च/कटेगरी फिल्टर करना
     Map<String, Map<String, dynamic>> shopsMap = {};
 
     for (var prod in CakeDatabase.productInventory) {
@@ -454,186 +463,214 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
       backgroundColor: const Color(0xFFF8F9FA),
       body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 90),
-            children: [
-              // 🔍 सर्च बार (Search Bar)
-              TextField(
-                controller: _searchController,
-                onChanged: (val) => setState(() => _searchQuery = val),
-                decoration: InputDecoration(
-                  hintText: 'फल, सब्जियां या आइटम खोजें (Faridabad)...',
-                  prefixIcon: const Icon(Icons.search, color: Colors.green),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // कैटेगरी फिल्टर्स (All, Fresh Fruits, Vegetables etc.)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: categories.map((cat) {
-                    bool isSelected = selectedCategory == cat;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(cat),
-                        selected: isSelected,
-                        selectedColor: Colors.green.shade700,
-                        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87),
-                        onSelected: (val) => setState(() => selectedCategory = cat),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              _isLoadingCloud
-                  ? const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
-                  : groupedShopsList.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(50),
-                          child: Center(child: Text('कोई दुकान या सामान उपलब्ध नहीं है!', style: TextStyle(color: Colors.grey))),
-                        )
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: groupedShopsList.length,
-                          itemBuilder: (context, shopIndex) {
-                            var shopData = groupedShopsList[shopIndex];
-                            List shopProducts = shopData['products'];
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 20),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // 🏬 दुकान की हैडर पट्टी (Shop Header)
-                                  Row(
-                                    children: [
-                                      const CircleAvatar(
-                                        backgroundColor: Colors.green,
-                                        child: Icon(Icons.store, color: Colors.white),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(shopData['shopName'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                            Text('📍 ${shopData['shopAddress']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(height: 20),
-
-                                  // 🍎 इस दुकान के प्रोडक्ट्स की ग्रिड लिस्ट
-                                  GridView.builder(
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 2,
-                                      crossAxisSpacing: 10,
-                                      mainAxisSpacing: 10,
-                                      childAspectRatio: 0.72,
-                                    ),
-                                    itemCount: shopProducts.length,
-                                    itemBuilder: (context, prodIndex) {
-                                      var prod = shopProducts[prodIndex];
-                                      String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
-                                      double qty = _cartQuantities[prodId] ?? 0.0;
-                                      String unit = prod['unit'] ?? 'Kg';
-
-                                      return Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade50,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: Colors.grey.shade200),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: ClipRRect(
-                                                borderRadius: BorderRadius.circular(8),
-                                                child: prod['image'] != null && prod['image'].toString().isNotEmpty
-                                                    ? Image.network(prod['image'], fit: BoxFit.cover, width: double.infinity, errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 50, color: Colors.grey))
-                                                    : const Icon(Icons.image, size: 50, color: Colors.grey),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Text(prod['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                            Text('₹${prod['price']} / $unit', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
-                                            const SizedBox(height: 6),
-                                            qty == 0
-                                                ? SizedBox(
-                                                    width: double.infinity,
-                                                    height: 32,
-                                                    child: ElevatedButton(
-                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: EdgeInsets.zero),
-                                                      onPressed: () => _incrementQty(prod),
-                                                      child: const Text('जोड़ें (Add)', style: TextStyle(fontSize: 12)),
-                                                    ),
-                                                  )
-                                                : Row(
-                                                    mainAxisAlignment: MainAxisAlignment.center,
-                                                    children: [
-                                                      IconButton(
-                                                        icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
-                                                        onPressed: () => _decrementQty(prod),
-                                                        padding: EdgeInsets.zero,
-                                                        constraints: const BoxConstraints(),
-                                                      ),
-                                                      GestureDetector(
-                                                        onTap: () => _showCustomQuantityDialog(prod),
-                                                        child: Padding(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                                                          child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                        ),
-                                                      ),
-                                                      IconButton(
-                                                        icon: const Icon(Icons.add_circle, color: Colors.green, size: 20),
-                                                        onPressed: () => _incrementQty(prod),
-                                                        padding: EdgeInsets.zero,
-                                                        constraints: const BoxConstraints(),
-                                                      ),
-                                                    ],
-                                                  ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
+          RefreshIndicator(
+            onRefresh: _fetchShopProfileAndProducts,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 90),
+              children: [
+                // 🔍 सर्च बार और रिफ्रेश बटन (Search Bar & Refresh Button)
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (val) => setState(() => _searchQuery = val),
+                        decoration: InputDecoration(
+                          hintText: 'फल, सब्जियां या आइटम खोजें...',
+                          prefixIcon: const Icon(Icons.search, color: Colors.green),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
                         ),
-            ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.green),
+                        tooltip: 'डेटा रिफ्रेश करें',
+                        onPressed: _fetchShopProfileAndProducts,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // कैटेगरी फिल्टर्स (Categories)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: categories.map((cat) {
+                      bool isSelected = selectedCategory == cat;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(cat),
+                          selected: isSelected,
+                          selectedColor: Colors.green.shade700,
+                          labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87),
+                          onSelected: (val) => setState(() => selectedCategory = cat),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                _isLoadingCloud
+                    ? const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+                    : groupedShopsList.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(50),
+                            child: Center(child: Text('कोई दुकान या सामान उपलब्ध नहीं है!', style: TextStyle(color: Colors.grey))),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: groupedShopsList.length,
+                            itemBuilder: (context, shopIndex) {
+                              var shopData = groupedShopsList[shopIndex];
+                              List shopProducts = shopData['products'];
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // 🏬 दुकान की हैडर पट्टी (Shop Header)
+                                    Row(
+                                      children: [
+                                        const CircleAvatar(
+                                          backgroundColor: Colors.green,
+                                          child: Icon(Icons.store, color: Colors.white),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(shopData['shopName'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                              Text('📍 ${shopData['shopAddress']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const Divider(height: 20),
+
+                                    // 🍎 इस दुकान के प्रोडक्ट्स की ग्रिड लिस्ट
+                                    GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 2,
+                                        crossAxisSpacing: 10,
+                                        mainAxisSpacing: 10,
+                                        childAspectRatio: 0.72,
+                                      ),
+                                      itemCount: shopProducts.length,
+                                      itemBuilder: (context, prodIndex) {
+                                        var prod = shopProducts[prodIndex];
+                                        String prodId = prod['firebaseKey'] ?? prod['id'] ?? prod['name'];
+                                        double qty = _cartQuantities[prodId] ?? 0.0;
+                                        String unit = prod['unit'] ?? 'Kg';
+                                        String imageUrl = prod['image'] ?? '';
+
+                                        return Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade50,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: Colors.grey.shade200),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: imageUrl.isNotEmpty
+                                                      ? Image.network(
+                                                          imageUrl,
+                                                          fit: BoxFit.cover,
+                                                          width: double.infinity,
+                                                          errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, size: 40, color: Colors.grey)),
+                                                        )
+                                                      : const Center(child: Icon(Icons.image, size: 40, color: Colors.grey)),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(prod['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                              Text('₹${prod['price']} / $unit', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                                              const SizedBox(height: 6),
+                                              qty == 0
+                                                  ? SizedBox(
+                                                      width: double.infinity,
+                                                      height: 32,
+                                                      child: ElevatedButton(
+                                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: EdgeInsets.zero),
+                                                        onPressed: () => _incrementQty(prod),
+                                                        child: const Text('जोड़ें (Add)', style: TextStyle(fontSize: 12)),
+                                                      ),
+                                                    )
+                                                  : Row(
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: [
+                                                        IconButton(
+                                                          icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                                                          onPressed: () => _decrementQty(prod),
+                                                          padding: EdgeInsets.zero,
+                                                          constraints: const BoxConstraints(),
+                                                        ),
+                                                        GestureDetector(
+                                                          onTap: () => _showCustomQuantityDialog(prod),
+                                                          child: Padding(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                                                            child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                          ),
+                                                        ),
+                                                        IconButton(
+                                                          icon: const Icon(Icons.add_circle, color: Colors.green, size: 20),
+                                                          onPressed: () => _incrementQty(prod),
+                                                          padding: EdgeInsets.zero,
+                                                          constraints: const BoxConstraints(),
+                                                        ),
+                                                      ],
+                                                    ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+              ],
+            ),
           ),
 
           // 🛒 नीचे व्यू कार्ट (View Cart) फ्लोटिंग बार
