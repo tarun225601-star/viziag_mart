@@ -32,7 +32,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     _startOrderRefreshTimer();
   }
 
-  // 📂 लोकल मेमोरी (SharedPreferences) से पुराना डेटा और हिस्ट्री परमानेंट लोड करना
   Future<void> _loadLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     List<String> savedIds = prefs.getStringList('vendor_seen_order_ids') ?? [];
@@ -69,7 +68,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     await prefs.setStringList('vendor_seen_order_ids', _localSeenOrderIds.toList());
   }
 
-  // 💾 स्वीकार किए गए ऑर्डर को SharedPreferences में हमेशा के लिए सेव करना ताकि ऐप कटने पर भी न उड़े
   Future<void> _saveOrderToVendorHistory(Map<String, dynamic> order) async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
@@ -128,6 +126,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     }
   }
 
+  // 🚀 सुपर-ऑप्टिमाइज्ड फेच: बिना बात के स्क्रीन रीफ्रेश (setState) नहीं करेगा जिससे हैंग होना बंद हो जाएगा
   Future<void> _fetchOnlyLatestIncomingOrder() async {
     try {
       final uri = Uri.parse('$_firebaseRestUrl/orders.json?orderBy="\$key"&limitToLast=1');
@@ -161,6 +160,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
 
         String? currentOrderId = _latestIncomingOrder?['orderId']?.toString();
 
+        // सिर्फ तभी setState होगा जब सच में आर्डर बदला हो या नया आया हो
         if (mounted && currentOrderId != fetchedOrderId) {
           setState(() {
             _latestIncomingOrder = fetchedOrder;
@@ -299,7 +299,10 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
   void _showOrderDetailsDialog(Map<String, dynamic> order) {
     String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
     String phone = order['customerPhone'] ?? order['phone'] ?? '';
+    
+    // 📍 केवल और केवल ग्राहक का पता (शॉप एड्रेस पूरी तरह से ब्लॉक)
     String address = order['customerAddress'] ?? order['deliveryAddress'] ?? 'ग्राहक का पता उपलब्ध नहीं';
+    
     String orderTimeStr = _formatOrderTime(order['timestamp'] ?? order['createdAt'] ?? order['time']);
     
     var itemsRaw = order['items'];
@@ -446,6 +449,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
+                              // 🛡️ सुरक्षित आईडी बिल्डर ताकी कभी लाल स्क्रीन न आए
                               Builder(
                                 builder: (context) {
                                   String rawId = _latestIncomingOrder!['orderId']?.toString() ?? 'N/A';
@@ -463,6 +467,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
                           Text('👤 ग्राहक: ${_latestIncomingOrder!['customerName'] ?? _latestIncomingOrder!['name'] ?? 'Customer'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
                           
+                          // 📍 केवल और केवल ग्राहक का पता (शॉप एड्रेस पूरी तरह से ब्लॉक)
                           Builder(
                             builder: (context) {
                               String customerAddress = _latestIncomingOrder!['customerAddress'] ?? 
@@ -499,21 +504,4 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
-                                  onPressed: () => _acceptAndForwardOrder(_latestIncomingOrder!),
-                                  icon: const Icon(Icons.check, size: 16),
-                                  label: const Text('स्वीकार करें'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal,
