@@ -504,4 +504,21 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal,
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal,foregroundColor: Colors.white),
+                                  onPressed: () => _acceptAndForwardOrder(_latestIncomingOrder!),
+                                  icon: const Icon(Icons.check, size: 16),
+                                  label: const Text('स्वीकार करें'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
