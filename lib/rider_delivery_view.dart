@@ -206,7 +206,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
 
   void _startOrderRefreshTimer() {
     _orderRefreshTimer?.cancel();
-    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
+    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 120), (timer) {
       if (mounted && _isLoggedIn && !_isAdminLoggedIn && !_isAcceptedByRider) {
         _fetchOnlyLatestOrderRest();
       }
