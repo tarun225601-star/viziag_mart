@@ -676,7 +676,7 @@ class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
                               width: double.infinity,
                               height: 45,
                               child: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                              onPressed: _acceptOrder,
+                              
                               child: const Text('ऑर्डर स्वीकार करें (Accept)', style: TextStyle(fontWeight: FontWeight.bold)),
                             )
                           else
