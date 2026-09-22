@@ -56,7 +56,7 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
     const MarketplaceBuyerView(),
     const VendorAuthAndPortalView(),
     const RiderDeliveryScreen(),
-    const CartAndOrdersView(),
+    
   ];
 
   @override
@@ -119,41 +119,21 @@ class _CakeMainHubScreenState extends State<CakeMainHubScreen> {
           ),
         ),
       ),
-      body: IndexedStack(index: _selectedTabIndex > 3 ? 3 : _selectedTabIndex, children: _tabScreens),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedTabIndex > 3 ? 3 : _selectedTabIndex,
-        selectedItemColor: Colors.green.shade700,
-        unselectedItemColor: Colors.grey,
-        backgroundColor: Colors.white,
-        type: BottomNavigationBarType.fixed,
-        onTap: (i) => setState(() => _selectedTabIndex = i),
-        items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.storefront_outlined), label: 'Shop'),
-          const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'Vendor'),
-          const BottomNavigationBarItem(icon: Icon(Icons.delivery_dining), label: 'Delivery'),
-          BottomNavigationBarItem(
-            icon: Stack(
-              children: [
-                const Icon(Icons.shopping_cart_outlined),
-                if (totalCartCount > 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                      child: Text('$totalCartCount', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-                    ),
-                  ),
-              ],
-            ),
-            label: 'Cart & Orders',
-          ),
-        ],
-      ),
-    );
-  }
+      body: IndexedStack(index: _selectedTabIndex > 2 ? 2 : _selectedTabIndex, children: _tabScreens),
+bottomNavigationBar: BottomNavigationBar(
+  currentIndex: _selectedTabIndex > 2 ? 2 : _selectedTabIndex,
+  selectedItemColor: Colors.green.shade700,
+  unselectedItemColor: Colors.grey,
+  backgroundColor: Colors.white,
+  type: BottomNavigationBarType.fixed,
+  onTap: (i) => setState(() => _selectedTabIndex = i),
+  items: const [
+    BottomNavigationBarItem(icon: Icon(Icons.storefront_outlined), label: 'Shop'),
+    BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'Vendor'),
+    BottomNavigationBarItem(icon: Icon(Icons.delivery_dining), label: 'Delivery'),
+  ],
+),
+
 
   void _showProfileEditDialog(BuildContext context) {
     showDialog(
