@@ -484,7 +484,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
 
   @override
   Widget build(BuildContext context) {
-    var shop = CakeDatabase.bakeryShop;
+    var shop =CakeDatabase.bakeryShop;
     bool isShopOpen = shop['isOpen'] ?? true;
     String shopAddress = (shop['address'] ?? 'Faridabad').toString().toLowerCase();
     bool isLocalFaridabadShop = shopAddress.contains(_targetCity) || shopAddress.isEmpty;
