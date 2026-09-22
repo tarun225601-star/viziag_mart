@@ -12,14 +12,11 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
   @override
   void initState() {
     super.initState();
-    // यहाँ से पुराना डेटा लोड करने वाला फंक्शन हटा दिया है, 
-    // ताकि पुराने 97 ऑर्डर्स स्क्रीन पर लोड होकर न आएं।
     if (CakeDatabase.localOrdersCache == null) {
       CakeDatabase.localOrdersCache = [];
     }
   }
 
-  // यह चेक करने के लिए कि आर्डर आज का है या नहीं (आज की तारीख: 22 सितंबर 2026)
   bool _isToday(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return false;
     try {
@@ -50,7 +47,6 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
       ),
       body: Column(
         children: [
-          // 📊 आज के ऑर्डर्स का समरी कार्ड
           Container(
             padding: const EdgeInsets.all(14),
             margin: const EdgeInsets.all(10),
@@ -88,8 +84,6 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
               ],
             ),
           ),
-
-          // 📜 केवल नए/लोकल ऑर्डर्स दिखाने के लिए लिस्ट व्यू
           Expanded(
             child: CakeDatabase.localOrdersCache.isEmpty
                 ? const Center(
@@ -184,7 +178,8 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Container(
-                                    padding: const:_buildStatusDecoration(status),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: _buildStatusDecoration(status),
                                     child: Text('स्टेटस: $status', style: TextStyle(color: status.toLowerCase().contains('delivered') ? Colors.greenAccent : Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12)),
                                   ),
                                 ],
@@ -201,7 +196,7 @@ class _CartAndOrdersViewState extends State<CartAndOrdersView> {
     );
   }
 
-  Decoration _buildStatusDecoration(String status) {
+  BoxDecoration _buildStatusDecoration(String status) {
     return BoxDecoration(
       color: status.toLowerCase().contains('delivered') ? Colors.green.withOpacity(0.2) : Colors.amber.withOpacity(0.2),
       borderRadius: BorderRadius.circular(4),
