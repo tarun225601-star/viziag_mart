@@ -6,27 +6,58 @@ import 'dart:convert';
 class CakeDatabase {
   static String firebaseRestUrl = "https://viziagmart-default-rtdb.firebaseio.com"; 
 
-  static String currentUserPhone = "9971968060";
-  static String currentCustomerName = "Tarun Kumar";
-  static String currentDeliveryAddress = "Sector 15A Faridabad";
+  // 🟢 डायनामिक वेंडर और यूजर डीटेल्स (लॉगिन के बाद SharedPreferences से अपडेट होंगी)
+  static String currentUserPhone = "";
+  static String currentCustomerName = "";
+  static String currentDeliveryAddress = "";
 
+  // 🏪 वेंडर की दुकान की प्रोफाइल (डिफ़ॉल्ट खाली या सेव्ड डेटा के साथ)
   static Map<String, dynamic> bakeryShop = {
-    'shopId': 'shop_cake_01',
-    'shopName': 'Tarun Fruit & Vegetable Shop',
-    'ownerName': 'Tarun Kumar',
-    'ownerPhone': '9971968060',
+    'shopId': '',
+    'shopName': '',
+    'ownerName': '',
+    'ownerPhone': '',
     'ownerPhotoPath': '', 
     'bannerPhotoPath': '',
     'shopPhotoPath': '',
-    'phone': '9971968060',
-    'address': 'Sector 15A Ajronda Sabji Mandi, Faridabad',
-    'bio': 'ताज़ा फल, सब्जियां और उत्पाद उपलब्ध।',
+    'phone': '',
+    'address': '',
+    'bio': '',
     'isOpen': true,
   };
 
   static List<Map<String, dynamic>> productInventory = [];
   static List<Map<String, dynamic>> cartItems = [];
   static List<Map<String, dynamic>> localOrdersCache = [];
+
+  // ==========================================
+  // 0. वेंडर या यूजर का डेटा लोकली लोड/सेव करने का फंक्शन
+  // ==========================================
+  static Future<void> loadUserDataLocally() async {
+    final prefs = await SharedPreferences.getInstance();
+    currentUserPhone = prefs.getString('logged_vendor_phone') ?? prefs.getString('user_phone') ?? "";
+    currentCustomerName = prefs.getString('logged_user_name') ?? "";
+    currentDeliveryAddress = prefs.getString('logged_user_address') ?? "";
+
+    // अगर दुकान की प्रोफाइल भी SharedPreferences में सेव है तो उसे लोड करें
+    String? shopStr = prefs.getString('cached_bakery_shop');
+    if (shopStr != null && shopStr.isNotEmpty) {
+      try {
+        Map<String, dynamic> decodedShop = json.decode(shopStr);
+        bakeryShop = Map<String, dynamic>.from(decodedShop);
+      } catch (e) {
+        debugPrint("Shop local load error: $e");
+      }
+    }
+  }
+
+  static Future<void> saveUserDataLocally() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('logged_vendor_phone', currentUserPhone);
+    await prefs.setString('logged_user_name', currentCustomerName);
+    await prefs.setString('logged_user_address', currentDeliveryAddress);
+    await prefs.setString('cached_bakery_shop', json.encode(bakeryShop));
+  }
 
   // ==========================================
   // 1. इन्वेंट्री (Products) के लिए लोकल सेविंग & लोडिंग
