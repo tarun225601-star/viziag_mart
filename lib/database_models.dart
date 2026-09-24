@@ -106,7 +106,6 @@ class CakeDatabase {
         });
 
         if (latestKey != null && latestValue != null) {
-          // 🟢 सुरक्षित तरीके से आर्डर आईडी सेट करना
           latestValue!['orderId'] = latestKey;
 
           bool alreadyExists = localOrdersCache.any((ord) => ord['orderId'] == latestKey);
@@ -123,4 +122,4 @@ class CakeDatabase {
     }
     return null; 
   }
-} मॉडल डेटाबेस
+}
