@@ -409,7 +409,7 @@ class _MarketplaceBuyerViewState extends State<MarketplaceBuyerView> {
       final riderUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json');
       final riderResponse = await http.post(riderUri, body: json.encode(finalOrderData));
 
-      final vendorUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/vendor_orders.json');
+      final vendorUri = Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json');
       await http.post(vendorUri, body: json.encode(finalOrderData));
 
       if (riderResponse.statusCode == 200 || riderResponse.statusCode == 201) {
