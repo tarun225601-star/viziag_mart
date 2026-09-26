@@ -1434,4 +1434,5 @@ class CartAndWhatsAppCheckoutView extends StatefulWidget {
   State<CartAndWhatsAppCheckoutView> createState() => _CartAndWhatsAppCheckoutViewState();
 }
 
-class _CartAndWhatsAppCheckoutViewState extends Stat
+class _CartAndWhatsAppCheckoutViewState extends State<CartAndWhatsAppCheckoutView> // ✅ यहाँ पूरा 'State' कर दे
+  
