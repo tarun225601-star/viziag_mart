@@ -1434,5 +1434,14 @@ class CartAndWhatsAppCheckoutView extends StatefulWidget {
   State<CartAndWhatsAppCheckoutView> createState() => _CartAndWhatsAppCheckoutViewState();
 }
 
-class _CartAndWhatsAppCheckoutViewState extends State<CartAndWhatsAppCheckoutView> // ✅ यहाँ पूरा 'State' कर दे
+class _CartAndWhatsAppCheckoutViewState extends State<CartAndWhatsAppCheckoutView> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Checkout')),
+      body: Center(child: Text('WhatsApp Checkout')),
+    );
+  }
+}
+
   
