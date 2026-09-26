@@ -89,7 +89,7 @@ class CakeDatabase {
   static Future<Map<String, dynamic>?> fetchSingleLatestOrderOnly() async {
     try {
       final response = await http.get(
-        Uri.parse('$firebaseRestUrl/customer_orders.json?orderBy="\$key"&limitToLast=1'),
+        Uri.parse('$firebaseRestUrl/orders.json?orderBy="\$key"&limitToLast=1'),
       );
 
       if (response.statusCode == 200 && response.body != 'null' && response.body.isNotEmpty) {
