@@ -1,430 +1,430 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => CentralFaridabadEngine()),
-      ],
-      child: const CentralFaridabadApp(),
-    ),
-  );
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  runApp(const ViziaGMartApp());
 }
 
-class CentralFaridabadApp extends StatelessWidget {
-  const CentralFaridabadApp({super.key});
+// ============================================================================
+// 1. GLOBAL MODELS & DATA STRUCTURES
+// ============================================================================
+
+enum ProductCategory { vegetable, fruit, exotic, combo }
+
+enum WeightUnit { gram, kg, dozen, pack, piece }
+
+class WeightOption {
+  final String label;
+  final double valueInKg; // Example: 0.1 for 100g, 1.0 for 1kg
+  final bool isPopular;
+
+  const WeightOption({
+    required this.label,
+    required this.valueInKg,
+    this.isPopular = false,
+  });
+}
+
+class Product {
+  final String id;
+  final String name;
+  final String hindiName;
+  final String icon;
+  final ProductCategory category;
+  double mandiPricePerKg; // बेस मंडी प्राइस
+  double marginPerKg; // प्रॉफिट मार्जिन
+  bool inStock;
+  final String description;
+  final bool isBestSeller;
+
+  Product({
+    required this.id,
+    required this.name,
+    required this.hindiName,
+    required this.icon,
+    required this.category,
+    required this.mandiPricePerKg,
+    required this.marginPerKg,
+    this.inStock = true,
+    this.description = '',
+    this.isBestSeller = false,
+  });
+
+  double get sellingPricePerKg => mandiPricePerKg + marginPerKg;
+  double get estimatedMarketPrice => sellingPricePerKg * 1.45; // Retail market comparison
+}
+
+class CartItem {
+  final Product product;
+  double selectedWeightInKg; // Example: 0.25 = 250g
+  DateTime addedTime;
+
+  CartItem({
+    required this.product,
+    required this.selectedWeightInKg,
+    required this.addedTime,
+  });
+
+  double get totalPrice => product.sellingPricePerKg * selectedWeightInKg;
+  double get totalMandiCost => product.mandiPricePerKg * selectedWeightInKg;
+  double get totalMargin => product.marginPerKg * selectedWeightInKg;
+
+  String get formattedWeight {
+    if (selectedWeightInKg < 1.0) {
+      return '${(selectedWeightInKg * 1000).round()} Gram';
+    } else {
+      double kgVal = selectedWeightInKg;
+      return kgVal % 1 == 0
+          ? '${kgVal.toInt()} Kg'
+          : '${kgVal.toStringAsFixed(1)} Kg';
+    }
+  }
+}
+
+class CustomerOrder {
+  final String orderId;
+  final String customerName;
+  final String customerPhone;
+  final String societyName;
+  final String flatNumber;
+  final List<CartItem> items;
+  final DateTime orderTime;
+  final String paymentMode;
+  bool isDelivered;
+
+  CustomerOrder({
+    required this.orderId,
+    required this.customerName,
+    required this.customerPhone,
+    required this.societyName,
+    required this.flatNumber,
+    required this.items,
+    required this.orderTime,
+    this.paymentMode = 'Pay on Delivery',
+    this.isDelivered = false,
+  });
+
+  double get totalBill => items.fold(0.0, (sum, i) => sum + i.totalPrice);
+  double get totalWeight => items.fold(0.0, (sum, i) => sum + i.selectedWeightInKg);
+}
+
+// ============================================================================
+// 2. CENTRAL DATABASE & APPLICATION STATE MANAGERS
+// ============================================================================
+
+class ViziaDatabase {
+  static String activeUserPhone = "9971968060";
+  static String activeUserName = "Tarun Kumar";
+  static String activeSociety = "Sector 15A Green Valley, Faridabad";
+  static String activeFlatNo = "House #402, Block-B";
+
+  // वज़न की मास्टर रेंज (100 Gram से लेकर 10 Kg तक)
+  static const List<WeightOption> masterWeightPresets = [
+    WeightOption(label: '100 Gram', valueInKg: 0.1),
+    WeightOption(label: '200 Gram', valueInKg: 0.2),
+    WeightOption(label: '250 Gram', valueInKg: 0.25, isPopular: true),
+    WeightOption(label: '500 Gram', valueInKg: 0.5, isPopular: true),
+    WeightOption(label: '750 Gram', valueInKg: 0.75),
+    WeightOption(label: '1 Kg', valueInKg: 1.0, isPopular: true),
+    WeightOption(label: '1.5 Kg', valueInKg: 1.5),
+    WeightOption(label: '2 Kg', valueInKg: 2.0, isPopular: true),
+    WeightOption(label: '3 Kg', valueInKg: 3.0),
+    WeightOption(label: '5 Kg', valueInKg: 5.0, isPopular: true),
+    WeightOption(label: '7 Kg', valueInKg: 7.0),
+    WeightOption(label: '10 Kg', valueInKg: 10.0, isPopular: true),
+  ];
+
+  // संपूर्ण इन्वेंटरी (सब्जियां + फल)
+  static List<Product> masterProducts = [
+    // --- VEGETABLES ---
+    Product(id: 'v1', name: 'Potato', hindiName: 'आलू (देसी)', icon: '🥔', category: ProductCategory.vegetable, mandiPricePerKg: 12.0, marginPerKg: 4.0, isBestSeller: true, description: 'Direct from Agra Mandi, high starch fresh potatoes.'),
+    Product(id: 'v2', name: 'Onion', hindiName: 'प्याज़ (नासिक)', icon: '🧅', category: ProductCategory.vegetable, mandiPricePerKg: 18.0, marginPerKg: 5.0, isBestSeller: true, description: 'Red Nashik Onions, long shelf life.'),
+    Product(id: 'v3', name: 'Tomato', hindiName: 'टमाटर (हाइब्रिड)', icon: '🍅', category: ProductCategory.vegetable, mandiPricePerKg: 15.0, marginPerKg: 5.0, isBestSeller: true, description: 'Firm red tomatoes for daily cooking.'),
+    Product(id: 'v4', name: 'Green Chilli', hindiName: 'हरी मिर्च', icon: '🌶️', category: ProductCategory.vegetable, mandiPricePerKg: 40.0, marginPerKg: 10.0, description: 'Spicy sharp green chillies.'),
+    Product(id: 'v5', name: 'Ginger', hindiName: 'अदरक (देसी)', icon: '🫚', category: ProductCategory.vegetable, mandiPricePerKg: 85.0, marginPerKg: 15.0, description: 'Fresh washed ginger roots.'),
+    Product(id: 'v6', name: 'Garlic', hindiName: 'लहसुन (उज्जैन)', icon: '🧄', category: ProductCategory.vegetable, mandiPricePerKg: 130.0, marginPerKg: 20.0, description: 'Big cloves white garlic.'),
+    Product(id: 'v7', name: 'Cauliflower', hindiName: 'फूलगोभी', icon: '🥦', category: ProductCategory.vegetable, mandiPricePerKg: 22.0, marginPerKg: 6.0, description: 'Clean white cauliflower heads.'),
+    Product(id: 'v8', name: 'Cabbage', hindiName: 'पत्तागोभी', icon: '🥬', category: ProductCategory.vegetable, mandiPricePerKg: 14.0, marginPerKg: 4.0, description: 'Fresh leafy crunchy cabbage.'),
+    Product(id: 'v9', name: 'Lady Finger', hindiName: 'भिंडी (नरम)', icon: '🫛', category: ProductCategory.vegetable, mandiPricePerKg: 28.0, marginPerKg: 7.0, description: 'Tender green okra without fibers.'),
+    Product(id: 'v10', name: 'Bottle Gourd', hindiName: 'लौकी (ताज़ा)', icon: '🥒', category: ProductCategory.vegetable, mandiPricePerKg: 16.0, marginPerKg: 5.0, description: 'Soft green bottle gourd.'),
+    Product(id: 'v11', name: 'Brinjal', hindiName: 'गोल बैंगन (भरता)', icon: '🍆', category: ProductCategory.vegetable, mandiPricePerKg: 20.0, marginPerKg: 5.0, description: 'Dark purple large eggplants.'),
+    Product(id: 'v12', name: 'Capsicum', hindiName: 'शिमला मिर्च', icon: '🫑', category: ProductCategory.vegetable, mandiPricePerKg: 36.0, marginPerKg: 9.0, description: 'Crispy green bell peppers.'),
+    Product(id: 'v13', name: 'Green Peas', hindiName: 'ताज़ा मटर', icon: '🫛', category: ProductCategory.vegetable, mandiPricePerKg: 55.0, marginPerKg: 10.0, description: 'Sweet green peas pods.'),
+    Product(id: 'v14', name: 'Carrot', hindiName: 'गाजर (लाल)', icon: '🥕', category: ProductCategory.vegetable, mandiPricePerKg: 24.0, marginPerKg: 6.0, description: 'Sweet red juicy carrots.'),
+    Product(id: 'v15', name: 'Spinach', hindiName: 'पालक (गड्डी)', icon: '🥬', category: ProductCategory.vegetable, mandiPricePerKg: 18.0, marginPerKg: 5.0, description: 'Washed fresh spinach leaves.'),
+
+    // --- FRUITS ---
+    Product(id: 'f1', name: 'Chaunsa Mango', hindiName: 'चौसा आम (मीठा)', icon: '🥭', category: ProductCategory.fruit, mandiPricePerKg: 45.0, marginPerKg: 15.0, isBestSeller: true, description: 'Original ripe Chaunsa mangoes.'),
+    Product(id: 'f2', name: 'Shimla Apple', hindiName: 'सेब (शिमला रॉयल)', icon: '🍎', category: ProductCategory.fruit, mandiPricePerKg: 80.0, marginPerKg: 20.0, isBestSeller: true, description: 'Crunchy sweet red apples.'),
+    Product(id: 'f3', name: 'Banana', hindiName: 'केला (पका हुआ)', icon: '🍌', category: ProductCategory.fruit, mandiPricePerKg: 25.0, marginPerKg: 8.0, isBestSeller: true, description: 'Fresh Robusta bananas per kg.'),
+    Product(id: 'f4', name: 'Pomegranate', hindiName: 'अनार (कांधारी)', icon: '🥠', category: ProductCategory.fruit, mandiPricePerKg: 110.0, marginPerKg: 25.0, description: 'Deep red seeds juicy pomegranates.'),
+    Product(id: 'f5', name: 'Papaya', hindiName: 'पपीता (डिस्को)', icon: '🍈', category: ProductCategory.fruit, mandiPricePerKg: 22.0, marginPerKg: 8.0, description: 'Sweet yellow ripe papayas.'),
+    Product(id: 'f6', name: 'Orange', hindiName: 'संतरा (नागपुर)', icon: '🍊', category: ProductCategory.fruit, mandiPricePerKg: 50.0, marginPerKg: 12.0, description: 'Juicy Nagpur oranges.'),
+    Product(id: 'f7', name: 'Grapes', hindiName: 'अंगूर (बिना बीज)', icon: '🍇', category: ProductCategory.fruit, mandiPricePerKg: 65.0, marginPerKg: 15.0, description: 'Sweet green seedless grapes.'),
+    Product(id: 'f8', name: 'Watermelon', hindiName: 'तरबूज (लाल)', icon: '🍉', category: ProductCategory.fruit, mandiPricePerKg: 12.0, marginPerKg: 5.0, description: 'Dark green sweet watermelons.'),
+  ];
+
+  // Active User Cart
+  static List<CartItem> userCart = [];
+
+  // G-Leader Aggregate Pool Database (Simulated orders from other society members)
+  static List<CustomerOrder> dummySocietyOrders = [
+    CustomerOrder(
+      orderId: 'ORD-901',
+      customerName: 'Rajesh Sharma',
+      customerPhone: '9811223344',
+      societyName: 'Sector 15A Green Valley',
+      flatNumber: 'A-102',
+      orderTime: DateTime.now().subtract(const Duration(minutes: 25)),
+      items: [
+        CartItem(product: masterProducts[0], selectedWeightInKg: 5.0, addedTime: DateTime.now()), // 5kg Potato
+        CartItem(product: masterProducts[1], selectedWeightInKg: 3.0, addedTime: DateTime.now()), // 3kg Onion
+        CartItem(product: masterProducts[15], selectedWeightInKg: 2.0, addedTime: DateTime.now()), // 2kg Mango
+      ],
+    ),
+    CustomerOrder(
+      orderId: 'ORD-902',
+      customerName: 'Pooja Verma',
+      customerPhone: '9876543210',
+      societyName: 'Sector 15A Green Valley',
+      flatNumber: 'C-504',
+      orderTime: DateTime.now().subtract(const Duration(minutes: 10)),
+      items: [
+        CartItem(product: masterProducts[0], selectedWeightInKg: 2.0, addedTime: DateTime.now()), // 2kg Potato
+        CartItem(product: masterProducts[2], selectedWeightInKg: 1.0, addedTime: DateTime.now()), // 1kg Tomato
+        CartItem(product: masterProducts[3], selectedWeightInKg: 0.25, addedTime: DateTime.now()), // 250g Chilli
+        CartItem(product: masterProducts[16], selectedWeightInKg: 1.0, addedTime: DateTime.now()), // 1kg Apple
+      ],
+    ),
+  ];
+}
+
+// ============================================================================
+// 3. MAIN ROOT APP
+// ============================================================================
+
+class ViziaGMartApp extends StatelessWidget {
+  const ViziaGMartApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Faridabad Central Fresh System',
+      title: 'Vizia G-Mart',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF5000), // Meituan Orange
-          primary: const Color(0xFFFF5000),
-          secondary: const Color(0xFF2B8C00), // Fresh Green
-          surface: const Color(0xFFF4F5F7),
+        brightness: Brightness.dark,
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF22C55E), // Emerald Green
+          secondary: Color(0xFFF59E0B), // Golden Amber
+          surface: Color(0xFF1E293B), // Slate Grey
+          background: Color(0xFF0F172A), // Dark Navy
+          error: Color(0xFFEF4444),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF4F5F7),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        cardColor: const Color(0xFF1E293B),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0B0F19),
+          elevation: 0,
+          centerTitle: false,
+        ),
       ),
-      home: const MainSystemControllerHub(),
+      home: const MainHubScreen(),
     );
   }
 }
 
 // ============================================================================
-// 1. FIREBASE BACKEND ENGINE
+// 4. MAIN HUB SCREEN (TAB CONTROLLER)
 // ============================================================================
 
-class CentralFaridabadEngine extends ChangeNotifier {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-
-  final String hubName = 'फरीदाबाद सेंट्रल हब';
-  bool isBookingOpen = true;
-
-  CentralFaridabadEngine() {
-    _listenToCutoffStatus();
-  }
-
-  void _listenToCutoffStatus() {
-    _db.collection('system_config').doc('mandi_status').snapshots().listen((snap) {
-      if (snap.exists && snap.data() != null) {
-        isBookingOpen = snap.data()!['isBookingOpen'] ?? true;
-        notifyListeners();
-      }
-    });
-  }
-
-  // कट-ऑफ ऑन/ऑफ़ करना
-  Future<void> setBookingStatus(bool status) async {
-    await _db.collection('system_config').doc('mandi_status').set({
-      'isBookingOpen': status,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
-  // ग्राहक: ऑर्डर बनाना
-  Future<void> createRealOrder({
-    required String name,
-    required String phone,
-    required String areaSector,
-    required String fullAddress,
-    required String productId,
-    required String productName,
-    required String variantLabel,
-    required double weightInKg,
-    required double price,
-    required int quantity,
-  }) async {
-    await _db.collection('orders').add({
-      'customerName': name,
-      'customerPhone': phone,
-      'areaSector': areaSector,
-      'fullAddress': fullAddress,
-      'productId': productId,
-      'productName': productName,
-      'variantLabel': variantLabel,
-      'weightInKg': weightInKg,
-      'unitPrice': price,
-      'quantity': quantity,
-      'totalAmount': price * quantity,
-      'status': 'PENDING',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // एडमिन: नया फल/सब्जी फोटो और रेट्स के साथ जोड़ना
-  Future<void> addNewProduct({
-    required String nameHindi,
-    required String nameEnglish,
-    required String category,
-    required String imageUrl,
-    required List<Map<String, dynamic>> variants,
-  }) async {
-    await _db.collection('products').add({
-      'nameHindi': nameHindi,
-      'nameEnglish': nameEnglish,
-      'category': category,
-      'imageUrl': imageUrl,
-      'inStock': true,
-      'variants': variants,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // स्टॉक कंट्रोल (In Stock / Out of Stock)
-  Future<void> toggleProductStock(String productId, bool currentStatus) async {
-    await _db.collection('products').doc(productId).update({
-      'inStock': !currentStatus,
-    });
-  }
-
-  // एडमिन: प्रोडक्ट रेट्स अपडेट करना
-  Future<void> updateProductVariants(String productId, List<Map<String, dynamic>> variants) async {
-    await _db.collection('products').doc(productId).update({
-      'variants': variants,
-    });
-  }
-
-  // डिलीवरी स्टेटस अपडेट
-  Future<void> updateOrderStatus(String orderId, String newStatus) async {
-    await _db.collection('orders').doc(orderId).update({
-      'status': newStatus,
-    });
-  }
-}
-
-// ============================================================================
-// 2. MAIN HUB CONTROLLER
-// ============================================================================
-
-class MainSystemControllerHub extends StatefulWidget {
-  const MainSystemControllerHub({super.key});
+class MainHubScreen extends StatefulWidget {
+  const MainHubScreen({super.key});
 
   @override
-  State<MainSystemControllerHub> createState() => _MainSystemControllerHubState();
+  State<MainHubScreen> createState() => _MainHubScreenState();
 }
 
-class _MainSystemControllerHubState extends State<MainSystemControllerHub> {
-  int _selectedTab = 0;
+class _MainHubScreenState extends State<MainHubScreen> {
+  int _currentTabIndex = 0;
 
-  final List<Widget> _screens = const [
-    CustomerStorefrontModule(),
-    FaridabadCentralHubModule(),
-    MasterAdminControlModule(),
-  ];
+  void _triggerRebuild() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _screens[_selectedTab],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedTab,
-        selectedItemColor: const Color(0xFFFF5000),
-        unselectedItemColor: Colors.grey.shade600,
-        onTap: (index) => setState(() => _selectedTab = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_bag_outlined),
-            activeIcon: Icon(Icons.shopping_bag),
-            label: '1. ग्राहक ऐप',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.local_shipping_outlined),
-            activeIcon: Icon(Icons.local_shipping),
-            label: '2. फरीदाबाद हब',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.admin_panel_settings_outlined),
-            activeIcon: Icon(Icons.admin_panel_settings),
-            label: '3. एडमिन (कंट्रोल)',
-          ),
-        ],
-      ),
+    final double currentCartTotal = ViziaDatabase.userCart.fold(
+      0.0,
+      (sum, item) => sum + item.totalPrice,
     );
-  }
-}
 
-// ============================================================================
-// MODULE 1: CUSTOMER STOREFRONT (विद प्रोडक्ट इमेज)
-// ============================================================================
+    final double currentCartWeight = ViziaDatabase.userCart.fold(
+      0.0,
+      (sum, item) => sum + item.selectedWeightInKg,
+    );
 
-class CustomerStorefrontModule extends StatelessWidget {
-  const CustomerStorefrontModule({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final engine = Provider.of<CentralFaridabadEngine>(context);
+    final List<Widget> screens = [
+      CustomerShopView(onCartChanged: _triggerRebuild),
+      AdminStockManagerView(onDataChanged: _triggerRebuild),
+      const GLeaderPortalView(),
+      CartAndCheckoutView(onCartChanged: _triggerRebuild),
+    ];
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFF5000),
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text('फरीदाबाद ताज़ा फल सप्लाई', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            Text('डायरेक्ट मंडी से आपके घर तक', style: TextStyle(color: Colors.white70, fontSize: 11)),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('🥦', style: TextStyle(fontSize: 20)),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'VIZIA G-MART',
+                  style: TextStyle(
+                    color: Color(0xFF22C55E),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                Text(
+                  'Direct Mandi Rates • ${ViziaDatabase.activeSociety}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 10),
+                ),
+              ],
+            ),
           ],
         ),
-      ),
-      body: Column(
-        children: [
-          // CUTOFF BANNER
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            color: engine.isBookingOpen ? Colors.amber.shade100 : Colors.red.shade100,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Color(0xFF22C55E)),
+            onPressed: () {
+              _triggerRebuild();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('मंडी भाव और स्टॉक सिंक हो गए हैं!'),
+                  duration: Duration(seconds: 1),
+                  backgroundColor: Color(0xFF22C55E),
+                ),
+              );
+            },
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(26),
+          child: Container(
+            color: const Color(0xFF1E293B),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Row(
               children: [
-                Icon(
-                  engine.isBookingOpen ? Icons.access_time_filled : Icons.block,
-                  color: engine.isBookingOpen ? Colors.amber.shade900 : Colors.red.shade900,
-                ),
-                const SizedBox(width: 10),
+                const Icon(Icons.location_on, color: Color(0xFFF59E0B), size: 12),
+                const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    engine.isBookingOpen
-                        ? '⏰ आज का फरीदाबाद ग्रुप ऑर्डर चालू है!'
-                        : '⛔ आज के ऑर्डर बंद हो चुके हैं। मंडी से गाड़ियां लोड हो रही हैं!',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: engine.isBookingOpen ? Colors.amber.shade900 : Colors.red.shade900,
-                      fontSize: 12,
-                    ),
+                    'डिलीवरी का पता: ${ViziaDatabase.activeFlatNo}, ${ViziaDatabase.activeSociety}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'COD/Pay Later',
+                    style: TextStyle(color: Color(0xFFF59E0B), fontSize: 9, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
             ),
           ),
-
-          // LIVE PRODUCTS
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('products').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text('अभी कोई फल लिस्टेड नहीं है।\nAdmin टैब से नया फ्रूट ऐड करें।', textAlign: TextAlign.center));
-                }
-
-                final products = snapshot.data!.docs;
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: products.length,
-                  itemBuilder: (context, index) {
-                    var doc = products[index];
-                    var pData = doc.data() as Map<String, dynamic>;
-                    bool inStock = pData['inStock'] ?? true;
-                    List variants = pData['variants'] ?? [];
-                    String imageUrl = pData['imageUrl'] ?? '';
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // PRODUCT IMAGE / PHOTO
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: imageUrl.isNotEmpty
-                                  ? Image.network(
-                                      imageUrl,
-                                      width: 80,
-                                      height: 80,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, err, stack) => _buildPlaceholderImage(),
-                                    )
-                                  : _buildPlaceholderImage(),
-                            ),
-                            const SizedBox(width: 12),
-
-                            // DETAILS & VARIANTS
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(pData['nameHindi'] ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                      Chip(
-                                        padding: EdgeInsets.zero,
-                                        label: Text(inStock ? 'In Stock' : 'Out of Stock'),
-                                        backgroundColor: inStock ? Colors.green.shade50 : Colors.red.shade50,
-                                        labelStyle: TextStyle(
-                                          color: inStock ? Colors.green : Colors.red,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      )
-                                    ],
-                                  ),
-                                  Text(pData['nameEnglish'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                                  const SizedBox(height: 8),
-
-                                  if (inStock) ...[
-                                    Wrap(
-                                      spacing: 6,
-                                      runSpacing: 6,
-                                      children: variants.map<Widget>((v) {
-                                        return OutlinedButton(
-                                          style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            side: const BorderSide(color: Color(0xFFFF5000)),
-                                            backgroundColor: const Color(0xFFFFF5F0),
-                                          ),
-                                          onPressed: engine.isBookingOpen
-                                              ? () => _openCheckoutSheet(context, engine, doc.id, pData['nameHindi'], v)
-                                              : null,
-                                          child: Text(
-                                            '${v['label']} - ₹${v['price']}',
-                                            style: const TextStyle(color: Color(0xFFFF5000), fontSize: 11, fontWeight: FontWeight.bold),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    )
-                                  ] else
-                                    const Text('आज मंडी में समाप्त', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            )
-                          ],
+        ),
+      ),
+      body: IndexedStack(
+        index: _currentTabIndex,
+        children: screens,
+      ),
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: Colors.white10, width: 1)),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentTabIndex,
+          selectedItemColor: const Color(0xFF22C55E),
+          unselectedItemColor: Colors.grey.shade500,
+          backgroundColor: const Color(0xFF0B0F19),
+          type: BottomNavigationBarType.fixed,
+          selectedFontSize: 12,
+          unselectedFontSize: 11,
+          onTap: (index) => setState(() => _currentTabIndex = index),
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.storefront),
+              activeIcon: Icon(Icons.storefront, color: Color(0xFF22C55E)),
+              label: 'दुकान (Shop)',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.admin_panel_settings_outlined),
+              activeIcon: Icon(Icons.admin_panel_settings, color: Color(0xFF22C55E)),
+              label: 'एडमिन (Stock)',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.groups_outlined),
+              activeIcon: Icon(Icons.groups, color: Color(0xFF22C55E)),
+              label: 'जी-लीडर (Pool)',
+            ),
+            BottomNavigationBarItem(
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.shopping_cart_outlined),
+                  if (ViziaDatabase.userCart.isNotEmpty)
+                    Positioned(
+                      right: -6,
+                      top: -4,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          '${ViziaDatabase.userCart.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                    );
-                  },
-                );
-              },
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderImage() {
-    return Container(
-      width: 80,
-      height: 80,
-      color: Colors.orange.shade50,
-      child: const Icon(Icons.fastfood, color: Color(0xFFFF5000), size: 36),
-    );
-  }
-
-  void _openCheckoutSheet(BuildContext context, CentralFaridabadEngine engine, String productId, String productName, Map vData) {
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
-    final sectorCtrl = TextEditingController();
-    final addressCtrl = TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom + 20, top: 20, left: 20, right: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('ऑर्डर फॉर्म', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Divider(),
-            Text('सामान: $productName (${vData['label']})', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('कीमत: ₹${vData['price']}', style: const TextStyle(color: Color(0xFFFF5000), fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'आपका नाम', border: OutlineInputBorder())),
-            const SizedBox(height: 8),
-            TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder())),
-            const SizedBox(height: 8),
-            TextField(controller: sectorCtrl, decoration: const InputDecoration(labelText: 'सेक्टर / इलाका (उदा. सेक्टर 15)', border: OutlineInputBorder())),
-            const SizedBox(height: 8),
-            TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'मकान / फ्लैट नंबर', border: OutlineInputBorder())),
-            const SizedBox(height: 15),
-
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF5000)),
-                onPressed: () async {
-                  if (nameCtrl.text.isNotEmpty && phoneCtrl.text.isNotEmpty) {
-                    await engine.createRealOrder(
-                      name: nameCtrl.text,
-                      phone: phoneCtrl.text,
-                      areaSector: sectorCtrl.text,
-                      fullAddress: addressCtrl.text,
-                      productId: productId,
-                      productName: productName,
-                      variantLabel: vData['label'],
-                      weightInKg: (vData['weightInKg'] as num).toDouble(),
-                      price: (vData['price'] as num).toDouble(),
-                      quantity: 1,
-                    );
-                    if (context.mounted) {
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('✅ आपका ऑर्डर सेंट्रल हब में बुक हो गया है!')),
-                      );
-                    }
-                  }
-                },
-                child: const Text('ऑर्डर कंफर्म करें', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                ],
               ),
-            )
+              activeIcon: const Icon(Icons.shopping_cart, color: Color(0xFF22C55E)),
+              label: currentCartTotal > 0
+                  ? '₹${currentCartTotal.toStringAsFixed(0)} (${currentCartWeight < 1 ? '${(currentCartWeight * 1000).toInt()}g' : '${currentCartWeight.toStringAsFixed(1)}kg'})'
+                  : 'कार्ट (Cart)',
+            ),
           ],
         ),
       ),
@@ -433,318 +433,865 @@ class CustomerStorefrontModule extends StatelessWidget {
 }
 
 // ============================================================================
-// MODULE 2: CENTRAL FARIDABAD HUB (Aggregator Counter + Dispatch)
+// 5. CUSTOMER SHOP VIEW (SABJI & FRUITS WITH WEIGHT CONTROL)
 // ============================================================================
 
-class FaridabadCentralHubModule extends StatelessWidget {
-  const FaridabadCentralHubModule({super.key});
+class CustomerShopView extends StatefulWidget {
+  final VoidCallback onCartChanged;
+  const CustomerShopView({super.key, required this.onCartChanged});
+
+  @override
+  State<CustomerShopView> createState() => _CustomerShopViewState();
+}
+
+class _CustomerShopViewState extends State<CustomerShopView> with SingleTickerProviderStateMixin {
+  late TabController _categoryTabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoryTabController = TabController(length: 2, vsync: this);
+  }
+
+  void _addItemToCart(Product product, double weightInKg) {
+    var existingIndex = ViziaDatabase.userCart.indexWhere((item) => item.product.id == product.id);
+    if (existingIndex >= 0) {
+      ViziaDatabase.userCart[existingIndex].selectedWeightInKg = weightInKg;
+    } else {
+      ViziaDatabase.userCart.add(CartItem(
+        product: product,
+        selectedWeightInKg: weightInKg,
+        addedTime: DateTime.now(),
+      ));
+    }
+    widget.onCartChanged();
+    setState(() {});
+  }
+
+  void _updateCartWeight(String productId, double newWeightInKg) {
+    var existingIndex = ViziaDatabase.userCart.indexWhere((item) => item.product.id == productId);
+    if (existingIndex >= 0) {
+      if (newWeightInKg <= 0.05) {
+        ViziaDatabase.userCart.removeAt(existingIndex);
+      } else {
+        ViziaDatabase.userCart[existingIndex].selectedWeightInKg = newWeightInKg;
+      }
+      widget.onCartChanged();
+      setState(() {});
+    }
+  }
+
+  CartItem? _getCartItemOfProduct(String productId) {
+    try {
+      return ViziaDatabase.userCart.firstWhere((item) => item.product.id == productId);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final engine = Provider.of<CentralFaridabadEngine>(context);
+    final vegProducts = ViziaDatabase.masterProducts.where((p) => p.category == ProductCategory.vegetable).toList();
+    final fruitProducts = ViziaDatabase.masterProducts.where((p) => p.category == ProductCategory.fruit).toList();
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF2B8C00),
-          title: Text(engine.hubName, style: const TextStyle(color: Colors.white)),
-          bottom: const TabBar(
-            indicatorColor: Colors.amber,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            tabs: [
-              Tab(icon: Icon(Icons.shopping_cart), text: '1. मंडी कुल खरीद (Aggregator)'),
-              Tab(icon: Icon(Icons.local_shipping), text: '2. गाड़ी डिलीवरी लिस्ट'),
+    return Column(
+      children: [
+        // Category Switcher
+        Container(
+          color: const Color(0xFF1E293B),
+          child: TabBar(
+            controller: _categoryTabController,
+            indicatorColor: const Color(0xFF22C55E),
+            indicatorWeight: 3,
+            labelColor: const Color(0xFF22C55E),
+            unselectedLabelColor: Colors.grey,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            tabs: const [
+              Tab(icon: Icon(Icons.eco), text: '🥦 ताज़ा सब्जियाँ'),
+              Tab(icon: Icon(Icons.apple), text: '🍎 ताज़ा फल (Fruits)'),
             ],
           ),
         ),
-        body: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('orders').snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Center(child: Text('अभी कोई ऑर्डर नहीं आया है।'));
-            }
 
-            final orders = snapshot.data!.docs;
+        // Sub-Header Info Banner
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: const Color(0xFF22C55E).withOpacity(0.1),
+          child: const Row(
+            children: [
+              Icon(Icons.verified, color: Color(0xFF22C55E), size: 16),
+              SizedBox(width: 6),
+              Text(
+                'मंडी का सीधा भाव | 100 ग्राम से 10 किलो तक चुनें',
+                style: TextStyle(color: Color(0xFF22C55E), fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
 
-            Map<String, Map<String, dynamic>> mandiSummary = {};
+        // Products List View
+        Expanded(
+          child: TabBarView(
+            controller: _categoryTabController,
+            children: [
+              _buildProductListView(vegProducts),
+              _buildProductListView(fruitProducts),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-            for (var doc in orders) {
-              var data = doc.data() as Map<String, dynamic>;
-              if (data['status'] == 'CANCELLED') continue;
+  Widget _buildProductListView(List<Product> products) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(10),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        final cartItem = _getCartItemOfProduct(product.id);
+        final bool isInCart = cartItem != null;
+        final double currentWeight = isInCart ? cartItem.selectedWeightInKg : 1.0;
 
-              String itemKey = "${data['productName']} - [${data['variantLabel']}]";
-              int qty = (data['quantity'] as num).toInt();
-              double totalKg = ((data['weightInKg'] as num).toDouble()) * qty;
-
-              if (!mandiSummary.containsKey(itemKey)) {
-                mandiSummary[itemKey] = {'totalPkts': 0, 'totalKg': 0.0};
-              }
-
-              mandiSummary[itemKey]!['totalPkts'] = mandiSummary[itemKey]!['totalPkts'] + qty;
-              mandiSummary[itemKey]!['totalKg'] = mandiSummary[itemKey]!['totalKg'] + totalKg;
-            }
-
-            return TabBarView(
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: isInCart ? const Color(0xFF22C55E) : Colors.grey.shade800,
+              width: isInCart ? 1.5 : 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // TAB 1: MANDI AGGREGATED SUMMARY
-                ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: mandiSummary.length,
-                  itemBuilder: (context, index) {
-                    String key = mandiSummary.keys.elementAt(index);
-                    var summary = mandiSummary[key]!;
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: const Color(0xFF2B8C00),
-                          child: Text('${index + 1}', style: const TextStyle(color: Colors.white)),
-                        ),
-                        title: Text(key, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('कुल वजन: ${summary['totalKg']} Kg'),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(20)),
-                          child: Text(
-                            '${summary['totalPkts']} पैकेट',
-                            style: const TextStyle(color: Color(0xFF2B8C00), fontWeight: FontWeight.bold),
-                          ),
-                        ),
+                // Top Info Section
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Emoji / Thumbnail
+                    Container(
+                      width: 52,
+                      height: 52,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    );
-                  },
+                      child: Text(product.icon, style: const TextStyle(fontSize: 30)),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Name & Price Info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                product.hindiName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: product.inStock ? Colors.white : Colors.grey,
+                                  decoration: product.inStock ? null : TextDecoration.lineThrough,
+                                ),
+                              ),
+                              if (product.isBestSeller) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF59E0B).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text('Top', style: TextStyle(color: Color(0xFFF59E0B), fontSize: 9, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Text(
+                                '₹${product.sellingPricePerKg.toStringAsFixed(0)} / Kg',
+                                style: TextStyle(
+                                  color: product.inStock ? const Color(0xFF22C55E) : Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'बाज़ार: ₹${product.estimatedMarketPrice.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 11,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            product.description,
+                            style: TextStyle(color: Colors.grey.shade400, fontSize: 10),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Add Button / Out of Stock Banner
+                    if (!product.inStock)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade900.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'आउट ऑफ स्टॉक',
+                          style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      )
+                    else if (!isInCart)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF22C55E),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.add_shopping_cart, size: 16),
+                        label: const Text('ADD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        onPressed: () => _addItemToCart(product, 1.0), // डिफ़ॉल्ट 1 kg ऐड होगा
+                      ),
+                  ],
                 ),
 
-                // TAB 2: DELIVERY DISPATCH LIST
-                ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: orders.length,
-                  itemBuilder: (context, index) {
-                    var doc = orders[index];
-                    var oData = doc.data() as Map<String, dynamic>;
-                    bool isDelivered = oData['status'] == 'DELIVERED';
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: ListTile(
-                        title: Text('${oData['customerName']} (${oData['areaSector']})', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('पता: ${oData['fullAddress']}\nसामान: ${oData['productName']} (${oData['variantLabel']})\n📞 ${oData['customerPhone']} | ₹${oData['totalAmount']}'),
-                        trailing: Checkbox(
-                          activeColor: const Color(0xFF2B8C00),
-                          value: isDelivered,
-                          onChanged: (bool? val) {
-                            engine.updateOrderStatus(doc.id, val == true ? 'DELIVERED' : 'PENDING');
+                // Cart Controller & Weight Picker (जब प्रोडक्ट कार्ट में ऐड हो जाए)
+                if (product.inStock && isInCart) ...[
+                  const Divider(color: Colors.white12, height: 18),
+                  
+                  // Row 1: Weight Dropdown & Direct Stepper (+ / -)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Dropdown Selector (100g to 10kg)
+                      Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF22C55E).withOpacity(0.6)),
+                        ),
+                        child: DropdownButton<double>(
+                          value: ViziaDatabase.masterWeightPresets.any((w) => (w.valueInKg - currentWeight).abs() < 0.01)
+                              ? ViziaDatabase.masterWeightPresets.firstWhere((w) => (w.valueInKg - currentWeight).abs() < 0.01).valueInKg
+                              : null,
+                          hint: Text(
+                            cartItem.formattedWeight,
+                            style: const TextStyle(color: Color(0xFF22C55E), fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          dropdownColor: const Color(0xFF1E293B),
+                          underline: const SizedBox(),
+                          icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF22C55E)),
+                          items: ViziaDatabase.masterWeightPresets.map((preset) {
+                            return DropdownMenuItem<double>(
+                              value: preset.valueInKg,
+                              child: Row(
+                                children: [
+                                  Text(
+                                    preset.label,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: preset.isPopular ? const Color(0xFF22C55E) : Colors.white,
+                                      fontWeight: preset.isPopular ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                  if (preset.isPopular) ...[
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.star, color: Color(0xFFF59E0B), size: 10),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (double? newWeight) {
+                            if (newWeight != null) {
+                              _updateCartWeight(product.id, newWeight);
+                            }
                           },
                         ),
                       ),
-                    );
-                  },
-                ),
+
+                      // Stepper (+ / -)
+                      Container(
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove, color: Colors.redAccent, size: 18),
+                              onPressed: () {
+                                double nextWeight = currentWeight - 0.1;
+                                _updateCartWeight(product.id, nextWeight < 0.09 ? 0.0 : double.parse(nextWeight.toStringAsFixed(2)));
+                              },
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    cartItem.formattedWeight,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                                  ),
+                                  Text(
+                                    '₹${cartItem.totalPrice.toStringAsFixed(0)}',
+                                    style: const TextStyle(color: Color(0xFF22C55E), fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add, color: Color(0xFF22C55E), size: 18),
+                              onPressed: () {
+                                double nextWeight = currentWeight + 0.1;
+                                if (nextWeight <= 10.05) {
+                                  _updateCartWeight(product.id, double.parse(nextWeight.toStringAsFixed(2)));
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Row 2: Smooth Weight Slider (100g to 10kg Continuous Scroll Bar)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('स्क्रॉल करके वज़न चुनें (Slider):', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                          Text(
+                            'चुना गया: ${cartItem.formattedWeight}',
+                            style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: const Color(0xFF22C55E),
+                          inactiveTrackColor: Colors.grey.shade800,
+                          thumbColor: const Color(0xFFF59E0B),
+                          overlayColor: const Color(0xFFF59E0B).withOpacity(0.2),
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        ),
+                        child: Slider(
+                          value: currentWeight.clamp(0.1, 10.0),
+                          min: 0.1, // 100 gram
+                          max: 10.0, // 10 kg
+                          divisions: 99, // 100g increments
+                          onChanged: (double val) {
+                            _updateCartWeight(product.id, double.parse(val.toStringAsFixed(2)));
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            );
-          },
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 // ============================================================================
-// MODULE 3: MASTER ADMIN CONTROL (प्रोडक्ट फोटो, रेट्स और स्टॉक मैनेजमेंट)
+// 6. ADMIN STOCK MANAGER VIEW (TOGGLE IN/OUT STOCK + MARGIN CONTROL)
 // ============================================================================
 
-class MasterAdminControlModule extends StatelessWidget {
-  const MasterAdminControlModule({super.key});
+class AdminStockManagerView extends StatefulWidget {
+  final VoidCallback onDataChanged;
+  const AdminStockManagerView({super.key, required this.onDataChanged});
 
   @override
-  Widget build(BuildContext context) {
-    final engine = Provider.of<CentralFaridabadEngine>(context);
+  State<AdminStockManagerView> createState() => _AdminStockManagerViewState();
+}
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: const Text('मालिक (Admin Master Control)', style: TextStyle(color: Colors.white)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 1. CUTOFF SWITCH
-          const Text('1. फरीदाबाद कट-ऑफ कंट्रोल', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Card(
-            color: engine.isBookingOpen ? Colors.green.shade50 : Colors.red.shade50,
-            child: SwitchListTile(
-              activeColor: Colors.green,
-              title: const Text('ग्लोबल ऑर्डर स्विच', style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(engine.isBookingOpen ? 'ऑर्डर चालू हैं (Live)' : 'ऑर्डर बंद हैं (मंडी मोड)'),
-              value: engine.isBookingOpen,
-              onChanged: (val) => engine.setBookingStatus(val),
+class _AdminStockManagerViewState extends State<AdminStockManagerView> {
+  void _editPriceDialog(Product product) {
+    final mandiController = TextEditingController(text: product.mandiPricePerKg.toString());
+    final marginController = TextEditingController(text: product.marginPerKg.toString());
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: Text('${product.icon} ${product.hindiName} - रेट बदलें'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: mandiController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'मंडी खरीद रेट (Per Kg)', border: OutlineInputBorder()),
             ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: marginController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'मार्जिन रेट (Per Kg)', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('रद्द करें', style: TextStyle(color: Colors.grey)),
           ),
-          const SizedBox(height: 25),
-
-          // 2. PRODUCT & CATALOG MANAGEMENT
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('2. प्रोडक्ट, फोटो और स्टॉक मैनेजर', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF5000), foregroundColor: Colors.white),
-                onPressed: () => _openAddProductDialog(context, engine),
-                icon: const Icon(Icons.add_a_photo),
-                label: const Text('नया फल जोड़ें'),
-              )
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // PRODUCT LIST
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('products').snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const LinearProgressIndicator();
-              final products = snapshot.data!.docs;
-
-              return Column(
-                children: products.map((doc) {
-                  var pData = doc.data() as Map<String, dynamic>;
-                  bool inStock = pData['inStock'] ?? true;
-                  String imageUrl = pData['imageUrl'] ?? '';
-                  List variants = pData['variants'] ?? [];
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          // THUMBNAIL PHOTO
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: imageUrl.isNotEmpty
-                                ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => _smallPlaceholder())
-                                : _smallPlaceholder(),
-                          ),
-                          const SizedBox(width: 10),
-
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(pData['nameHindi'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                Text('${pData['nameEnglish']} | ${variants.length} रेट पैक', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-
-                          // IN-STOCK SWITCH
-                          Column(
-                            children: [
-                              const Text('Stock', style: TextStyle(fontSize: 10)),
-                              Switch(
-                                value: inStock,
-                                activeColor: Colors.green,
-                                onChanged: (val) => engine.toggleProductStock(doc.id, inStock),
-                              ),
-                            ],
-                          ),
-
-                          // DELETE BUTTON
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red),
-                            onPressed: () => FirebaseFirestore.instance.collection('products').doc(doc.id).delete(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              );
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF22C55E)),
+            onPressed: () {
+              setState(() {
+                product.mandiPricePerKg = double.tryParse(mandiController.text) ?? product.mandiPricePerKg;
+                product.marginPerKg = double.tryParse(marginController.text) ?? product.marginPerKg;
+              });
+              widget.onDataChanged();
+              Navigator.pop(context);
             },
-          )
+            child: const Text('सेव करें', style: TextStyle(color: Colors.black)),
+          ),
         ],
       ),
     );
   }
 
-  Widget _smallPlaceholder() {
-    return Container(
-      width: 50,
-      height: 50,
-      color: Colors.grey.shade200,
-      child: const Icon(Icons.image, color: Colors.grey),
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: ViziaDatabase.masterProducts.length,
+      itemBuilder: (context, index) {
+        final product = ViziaDatabase.masterProducts[index];
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: SwitchListTile(
+              secondary: Text(product.icon, style: const TextStyle(fontSize: 28)),
+              title: Text(
+                product.hindiName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('मंडी: ₹${product.mandiPricePerKg} | मार्जिन: ₹${product.marginPerKg}'),
+                  Text(
+                    'ग्राहक रेट: ₹${product.sellingPricePerKg.toStringAsFixed(0)} / kg',
+                    style: const TextStyle(color: Color(0xFF22C55E), fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              value: product.inStock,
+              activeColor: const Color(0xFF22C55E),
+              onChanged: (bool val) {
+                setState(() {
+                  product.inStock = val;
+                });
+                widget.onDataChanged();
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ============================================================================
+// 7. G-LEADER PORTAL (AGGREGATED POOL & BULK MANDI PROCUREMENT)
+// ============================================================================
+
+class GLeaderPortalView extends StatelessWidget {
+  const GLeaderPortalView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // 1. Calculate Aggregate Pool Data (All Society Orders Combined)
+    Map<String, double> aggregatedWeightsPerProduct = {};
+    Map<String, Product> productMap = {};
+    double totalSocietyCollection = 0.0;
+    double totalSocietyWeight = 0.0;
+    int totalSocietyOrders = ViziaDatabase.dummySocietyOrders.length;
+
+    // Active User order also included in aggregate
+    if (ViziaDatabase.userCart.isNotEmpty) {
+      totalSocietyOrders += 1;
+    }
+
+    // Process Dummy Orders
+    for (var order in ViziaDatabase.dummySocietyOrders) {
+      totalSocietyCollection += order.totalBill;
+      for (var item in order.items) {
+        aggregatedWeightsPerProduct[item.product.id] =
+            (aggregatedWeightsPerProduct[item.product.id] ?? 0.0) + item.selectedWeightInKg;
+        productMap[item.product.id] = item.product;
+        totalSocietyWeight += item.selectedWeightInKg;
+      }
+    }
+
+    // Process Active User Cart
+    for (var item in ViziaDatabase.userCart) {
+      totalSocietyCollection += item.totalPrice;
+      aggregatedWeightsPerProduct[item.product.id] =
+          (aggregatedWeightsPerProduct[item.product.id] ?? 0.0) + item.selectedWeightInKg;
+      productMap[item.product.id] = item.product;
+      totalSocietyWeight += item.selectedWeightInKg;
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Summary Card
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF59E0B)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.groups, color: Color(0xFFF59E0B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'जी-लीडर मंडी पूल डैशबोर्ड (${ViziaDatabase.activeSociety})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFF59E0B)),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(color: Colors.white24, height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSummaryStat('कुल ऑर्डर्स', '$totalSocietyOrders'),
+                    _buildSummaryStat('कुल वज़न', '${totalSocietyWeight.toStringAsFixed(1)} Kg'),
+                    _buildSummaryStat('कुल कलेक्शन', '₹${totalSocietyCollection.toStringAsFixed(0)}'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          const Text(
+            '📦 मंडी थोक खरीदारी सूची (Combined Procurement List):',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF22C55E)),
+          ),
+          const Text(
+            'मंडी से सुबह मंडी भाव पर यही सामान एक साथ उठाना है:',
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+          const SizedBox(height: 10),
+
+          if (aggregatedWeightsPerProduct.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(30.0),
+                child: Text('अभी सोसाइटी से कोई ऑर्डर नहीं आया है।', style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: aggregatedWeightsPerProduct.keys.length,
+              itemBuilder: (context, index) {
+                String productId = aggregatedWeightsPerProduct.keys.elementAt(index);
+                double totalKg = aggregatedWeightsPerProduct[productId]!;
+                Product prod = productMap[productId]!;
+                double mandiCost = totalKg * prod.mandiPricePerKg;
+                double totalBill = totalKg * prod.sellingPricePerKg;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(prod.icon, style: const TextStyle(fontSize: 24)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(prod.hindiName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text(
+                              'मंडी रेट: ₹${prod.mandiPricePerKg}/kg | मंडी खर्च: ₹${mandiCost.toStringAsFixed(0)}',
+                              style: const TextStyle(color: Colors.grey, fontSize: 10),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF22C55E).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              totalKg < 1 ? '${(totalKg * 1000).toInt()} Gram' : '${totalKg.toStringAsFixed(1)} Kg',
+                              style: const TextStyle(color: Color(0xFF22C55E), fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text('कुल बिल: ₹${totalBill.toStringAsFixed(0)}', style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
     );
   }
 
-  // DIALOG: फोटो और रेट्स के साथ नया फल जोड़ने का फॉर्म
-  void _openAddProductDialog(BuildContext context, CentralFaridabadEngine engine) {
-    final hindiCtrl = TextEditingController();
-    final engCtrl = TextEditingController();
-    final imageCtrl = TextEditingController();
+  Widget _buildSummaryStat(String label, String value) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white)),
+      ],
+    );
+  }
+}
 
-    final p1Price = TextEditingController(text: '80');
-    final p3Price = TextEditingController(text: '230');
-    final p5Price = TextEditingController(text: '370');
+// ============================================================================
+// 8. CART & CHECKOUT VIEW
+// ============================================================================
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('नया फल व फोटो जोड़ें'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: hindiCtrl, decoration: const InputDecoration(labelText: 'हिंदी नाम (उदा. चौसा आम)', border: OutlineInputBorder())),
-              const SizedBox(height: 8),
-              TextField(controller: engCtrl, decoration: const InputDecoration(labelText: 'अंग्रेजी नाम (उदा. Chausa Mango)', border: OutlineInputBorder())),
-              const SizedBox(height: 8),
-              TextField(
-                controller: imageCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'फोटो लिंक (Image URL)',
-                  hintText: 'https://example.com/mango.jpg',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Align(alignment: Alignment.centerLeft, child: Text('रेट्स सेट करें (₹):', style: TextStyle(fontWeight: FontWeight.bold))),
-              const SizedBox(height: 8),
-              TextField(controller: p1Price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '1 Kg का रेट (₹)', border: OutlineInputBorder())),
-              const SizedBox(height: 8),
-              TextField(controller: p3Price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '3 Kg (फैमिली) का रेट (₹)', border: OutlineInputBorder())),
-              const SizedBox(height: 8),
-              TextField(controller: p5Price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '5 Kg (पेटी) का रेट (₹)', border: OutlineInputBorder())),
-            ],
-          ),
+class CartAndCheckoutView extends StatefulWidget {
+  final VoidCallback onCartChanged;
+  const CartAndCheckoutView({super.key, required this.onCartChanged});
+
+  @override
+  State<CartAndCheckoutView> createState() => _CartAndCheckoutViewState();
+}
+
+class _CartAndCheckoutViewState extends State<CartAndCheckoutView> {
+  @override
+  Widget build(BuildContext context) {
+    if (ViziaDatabase.userCart.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.shopping_cart_outlined, size: 70, color: Colors.grey),
+            const SizedBox(height: 12),
+            const Text('आपकी कार्ट खाली है!', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text('दुकान से ताज़ा फल व सब्जियाँ जोड़ें', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('रद्द करें')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF5000)),
-            onPressed: () async {
-              if (hindiCtrl.text.isNotEmpty) {
-                await engine.addNewProduct(
-                  nameHindi: hindiCtrl.text.trim(),
-                  nameEnglish: engCtrl.text.trim(),
-                  category: 'ताजे फल',
-                  imageUrl: imageCtrl.text.trim(),
-                  variants: [
-                    {'label': '1 Kg', 'weightInKg': 1.0, 'price': double.tryParse(p1Price.text) ?? 80.0},
-                    {'label': '3 Kg (फैमिली pack)', 'weightInKg': 3.0, 'price': double.tryParse(p3Price.text) ?? 230.0},
-                    {'label': '5 Kg (पूरी पेटी)', 'weightInKg': 5.0, 'price': double.tryParse(p5Price.text) ?? 370.0},
+      );
+    }
+
+    double totalCartBill = ViziaDatabase.userCart.fold(0.0, (sum, item) => sum + item.totalPrice);
+    double totalCartWeight = ViziaDatabase.userCart.fold(0.0, (sum, item) => sum + item.selectedWeightInKg);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('🛒 आपके कार्ट आइटम्स:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF22C55E))),
+          const SizedBox(height: 10),
+
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: ViziaDatabase.userCart.length,
+            itemBuilder: (context, index) {
+              final item = ViziaDatabase.userCart[index];
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  children: [
+                    Text(item.product.icon, style: const TextStyle(fontSize: 26)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.product.hindiName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text(
+                            '₹${item.product.sellingPricePerKg}/kg × ${item.formattedWeight}',
+                            style: const TextStyle(color: Colors.grey, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('₹${item.totalPrice.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF22C55E), fontSize: 14)),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  double next = item.selectedWeightInKg - 0.1;
+                                  if (next < 0.09) {
+                                    ViziaDatabase.userCart.removeAt(index);
+                                  } else {
+                                    item.selectedWeightInKg = double.parse(next.toStringAsFixed(2));
+                                  }
+                                });
+                                widget.onCartChanged();
+                              },
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline, color: Color(0xFF22C55E), size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  item.selectedWeightInKg = double.parse((item.selectedWeightInKg + 0.1).toStringAsFixed(2));
+                                });
+                                widget.onCartChanged();
+                              },
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ],
-                );
-                if (context.mounted) Navigator.pop(ctx);
-              }
+                ),
+              );
             },
-            child: const Text('सेव करें', style: TextStyle(color: Colors.white)),
-          )
+          ),
+
+          const SizedBox(height: 16),
+
+          // Bill Summary Box
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF59E0B)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('📊 बिल का विवरण (Bill Summary)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF59E0B), fontSize: 13)),
+                const Divider(color: Colors.white24, height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('कुल वज़न (Total Weight):', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    Text(
+                      totalCartWeight < 1 ? '${(totalCartWeight * 1000).toInt()} Gram' : '${totalCartWeight.toStringAsFixed(1)} Kg',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF22C55E), fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('डिलीवरी चार्ज (Mandi Direct Delivery):', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    const Text('FREE', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF22C55E), fontSize: 12)),
+                  ],
+                ),
+                const Divider(color: Colors.white24, height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('कुल रकम (Total Payable):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text('₹${totalCartBill.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF22C55E))),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF22C55E),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('ऑर्डर प्लेस हो गया! कुल वज़न: ${totalCartWeight.toStringAsFixed(1)}kg'),
+                    backgroundColor: const Color(0xFF22C55E),
+                  ),
+                );
+              },
+              child: Text(
+                'ऑर्डर प्लेस करें (₹${totalCartBill.toStringAsFixed(0)})',
+                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+          ),
         ],
       ),
     );
