@@ -6,12 +6,16 @@ import 'package:http/http.dart' as http;
 import 'database_models.dart';
 import 'image_picker_helper.dart';
 
-class CartAndOrdersView extends StatefulWidget {
-  const CartAndOrdersView({super.key});
+class RiderDeliveryScreen extends StatefulWidget {
+  const RiderDeliveryScreen({super.key});
 
   @override
-  State<CartAndOrdersView> createState() => _CartAndOrdersViewState();
+  State<RiderDeliveryScreen> createState() => _RiderDeliveryScreenState();
 }
+
+class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
+  // बाकी का कोड यहाँ रहेगा...
+  
 
 class _CartAndOrdersViewState extends State<CartAndOrdersView> {
   bool _isCheckingOut = false;
