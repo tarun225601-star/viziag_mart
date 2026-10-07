@@ -1,576 +1,309 @@
 import 'dart:async';
-import 'package:flutter/services.dart';
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:intl/intl.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'database_models.dart';
+import 'image_picker_helper.dart';
 
-class RiderDeliveryScreen extends StatefulWidget {
-  const RiderDeliveryScreen({super.key});
+class CartAndOrdersView extends StatefulWidget {
+  const CartAndOrdersView({super.key});
 
   @override
-  State<RiderDeliveryScreen> createState() => _RiderDeliveryScreenState();
+  State<CartAndOrdersView> createState() => _CartAndOrdersViewState();
 }
 
-class _RiderDeliveryScreenState extends State<RiderDeliveryScreen> {
-  bool _isLoggedIn = false;
-  bool _isAdminLoggedIn = false;
-  bool _isRegistering = false;
-  bool _isLoading = false;
-  
-  bool _isAcceptedByRider = false;
-
-  int _todayCompletedCount = 0;
-  double _todayTotalEarnings = 0.0;
-  
-  // 📦 लोकल सेव किए गए पुराने डिलीवर ऑर्डर्स की लिस्ट
-  List<Map<String, dynamic>> _deliveredHistoryList = [];
-
-  final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
-
-  final _regNameController = TextEditingController();
-  final _regPhoneController = TextEditingController();
-  final _regVehicleController = TextEditingController();
-  final _regPasswordController = TextEditingController();
-
-  Map<String, dynamic>? _latestOrder;
-  List<Map<String, dynamic>> _pendingRiders = [];
-  Set<String> _localSeenOrderIds = {};
-
-  Timer? _orderRefreshTimer;
-  final String _firebaseRestUrl = "https://viziagmart-default-rtdb.firebaseio.com";
+class _CartAndOrdersViewState extends State<CartAndOrdersView> {
+  bool _isCheckingOut = false;
+  bool _isLoadingOrders = false;
 
   @override
   void initState() {
     super.initState();
-    _loadLocalData();
+    _loadInitialData();
   }
 
-  // 📂 लोकल मेमोरी से सीन ऑर्डर्स और पुरानी हिस्ट्री लोड करना
-  Future<void> _loadLocalData() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // सीन आर्डर आईडी
-    List<String> savedIds = prefs.getStringList('seen_order_ids') ?? [];
-    
-    // पुरानी डिलीवर हिस्ट्री
-    String? historyString = prefs.getString('delivered_orders_history');
-    List<Map<String, dynamic>> loadedHistory = [];
-    if (historyString != null && historyString.isNotEmpty) {
-      try {
-        List decoded = json.decode(historyString);
-        loadedHistory = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (e) {
-        debugPrint("History load error: $e");
-      }
-    }
-
-    setState(() {
-      _localSeenOrderIds = savedIds.toSet();
-      _deliveredHistoryList = loadedHistory;
-      _todayCompletedCount = loadedHistory.length; // आज या कुल डिलीवर हुए आर्डर्स की गिनती
-      
-      // कुल कमाई कैलकुलेट करना
-      double totalEarn = 0.0;
-      for (var ord in loadedHistory) {
-        double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
-        totalEarn += amt;
-      }
-      _todayTotalEarnings = totalEarn;
-    });
+  Future<void> _loadInitialData() async {
+    await CakeDatabase.loadOrdersLocally();
+    if (mounted) setState(() {});
+    // बैकग्राउंड में नए ऑर्डर्स सिंक करने के लिए
+    _fetchLatestOrdersFromCloud();
   }
 
-  Future<void> _saveSeenOrderIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('seen_order_ids', _localSeenOrderIds.toList());
-  }
+  // REST API के जरिए आर्डर फेच करना (बिना किसी क्रैश के)
+  Future<void> _fetchLatestOrdersFromCloud() async {
+    if (_isLoadingOrders) return;
+    setState(() => _isLoadingOrders = true);
 
-  // 💾 डिलीवर आर्डर को लोकल मेमोरी में हमेशा के लिए सेव करना
-  Future<void> _saveOrderToLocalHistory(Map<String, dynamic> order) async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _deliveredHistoryList.insert(0, order); // सबसे ऊपर नया जोड़ें
-      _todayCompletedCount = _deliveredHistoryList.length;
-      
-      double totalEarn = 0.0;
-      for (var ord in _deliveredHistoryList) {
-        double amt = double.tryParse((ord['grandTotal'] ?? ord['totalAmount'] ?? '0').toString()) ?? 0.0;
-        totalEarn += amt;
-      }
-      _todayTotalEarnings = totalEarn;
-    });
-
-    // String में बदलकर सेव करें
-    await prefs.setString('delivered_orders_history', json.encode(_deliveredHistoryList));
-  }
-
-  @override
-  void dispose() {
-    _orderRefreshTimer?.cancel();
-    _phoneController.dispose();
-    _passwordController.dispose();
-    _regNameController.dispose();
-    _regPhoneController.dispose();
-    _regVehicleController.dispose();
-    _regPasswordController.dispose();
-    super.dispose();
-  }
-
-  void _triggerNewOrderAlert() {
-    HapticFeedback.heavyImpact();
-    Future.delayed(const Duration(milliseconds: 300), () {
-      HapticFeedback.vibrate();
-    });
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🚨 नया डिलीवरी आर्डर आ गया है भाई!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 4),
-        ),
+    try {
+      final response = await http.get(
+        Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'),
       );
-    }
-  }
 
-  String _formatOrderTime(dynamic timestampRaw) {
-    if (timestampRaw == null) return 'समय उपलब्ध नहीं';
-    try {
-      DateTime orderTime;
-      if (timestampRaw is int) {
-        orderTime = DateTime.fromMillisecondsSinceEpoch(timestampRaw);
-      } else if (timestampRaw is String) {
-        orderTime = DateTime.parse(timestampRaw);
-      } else {
-        return 'समय उपलब्ध नहीं';
-      }
-      return DateFormat('hh:mm a (dd MMM)').format(orderTime);
-    } catch (e) {
-      return timestampRaw.toString();
-    }
-  }
+      if (response.statusCode == 200 && response.body != 'null' && response.body.isNotEmpty) {
+        Map<String, dynamic> data = json.decode(response.body);
+        List<Map<String, dynamic>> loadedOrders = [];
 
-  Future<void> _fetchOnlyLatestOrderRest() async {
-    if (_isAcceptedByRider) return; 
+        data.forEach((key, val) {
+          if (val is Map) {
+            var ord = Map<String, dynamic>.from(val);
+            ord['orderId'] = key;
 
-    try {
-      final uri = Uri.parse('$_firebaseRestUrl/orders.json?orderBy="\$key"&limitToLast=1');
-      final res = await http.get(uri);
-
-      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> decodedData = json.decode(res.body);
-        bool hasNewOrder = false;
-        Map<String, dynamic>? fetchedOrder;
-
-        decodedData.forEach((key, value) {
-          if (value is Map) {
-            var order = Map<String, dynamic>.from(value);
-            order['orderId'] = key;
-
-            String status = order['orderStatus'] ?? order['status'] ?? 'Pending';
-            if (!status.toLowerCase().contains('delivered')) {
-              fetchedOrder = order;
-
-              if (!_localSeenOrderIds.contains(key)) {
-                _localSeenOrderIds.add(key);
-                hasNewOrder = true;
-              }
+            String custPhone = ord['customerPhone'] ?? '';
+            if (custPhone == CakeDatabase.currentUserPhone && CakeDatabase.currentUserPhone.isNotEmpty) {
+              loadedOrders.add(ord);
             }
           }
         });
 
-        _saveSeenOrderIds();
+        loadedOrders = loadedOrders.reversed.toList();
 
         if (mounted) {
           setState(() {
-            _latestOrder = fetchedOrder;
+            CakeDatabase.localOrdersCache = loadedOrders;
           });
-
-          if (hasNewOrder) {
-            _triggerNewOrderAlert();
-          }
-        }
-      } else {
-        if (mounted && !_isAcceptedByRider) {
-          setState(() {
-            _latestOrder = null;
-          });
+          await CakeDatabase.saveOrdersLocally();
         }
       }
     } catch (e) {
-      debugPrint("Fetch single order REST error: $e");
-    }
-  }
-
-  void _startOrderRefreshTimer() {
-    _orderRefreshTimer?.cancel();
-    _orderRefreshTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
-      if (mounted && _isLoggedIn && !_isAdminLoggedIn && !_isAcceptedByRider) {
-        _fetchOnlyLatestOrderRest();
-      }
-    });
-  }
-
-  Future<void> _loginRider() async {
-    String phone = _phoneController.text.trim();
-    String password = _passwordController.text.trim();
-
-    if (phone.isEmpty || password.isEmpty) {
-      _showMsg('कृपया मोबाइल नंबर और पासवर्ड दर्ज करें!', Colors.red);
-      return;
-    }
-
-    if (password == 'tarun#1') {
-      setState(() {
-        _isAdminLoggedIn = true;
-        _isLoggedIn = true;
-      });
-      _showMsg('👑 एडमिन पैनल लॉगिन सफल!', Colors.green);
-      _fetchPendingRidersRest();
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      final res = await http.get(Uri.parse('$_firebaseRestUrl/riders.json'));
-      setState(() => _isLoading = false);
-
-      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> data = json.decode(res.body);
-        bool found = false;
-        bool approved = false;
-
-        data.forEach((key, value) {
-          if (value is Map && value['phone'] == phone && value['password'] == password) {
-            found = true;
-            if (value['isApproved'] == true) {
-              approved = true;
-            }
-          }
-        });
-
-        if (found && approved) {
-          setState(() {
-            _isLoggedIn = true;
-            _isAdminLoggedIn = false;
-          });
-          _showMsg('🎉 राइडर लॉगिन सफल!', Colors.green);
-          _fetchOnlyLatestOrderRest();
-          _startOrderRefreshTimer();
-        } else if (found && !approved) {
-          _showMsg('⏳ आपका अकाउंट अभी एडमिन द्वारा अप्रूव नहीं किया गया है!', Colors.orange);
-        } else {
-          _showMsg('गलत मोबाइल नंबर या पासवर्ड!', Colors.red);
-        }
-      } else {
-        _showMsg('कोई राइडर रजिस्टर्ड नहीं है!', Colors.red);
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      _showMsg('एरर: $e', Colors.red);
-    }
-  }
-
-  Future<void> _registerRider() async {
-    String name = _regNameController.text.trim();
-    String phone = _regPhoneController.text.trim();
-    String vehicle = _regVehicleController.text.trim();
-    String password = _regPasswordController.text.trim();
-
-    if (name.isEmpty || phone.isEmpty || vehicle.isEmpty || password.isEmpty) {
-      _showMsg('सभी फील्ड भरना अनिवार्य है!', Colors.red);
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      final uri = Uri.parse('$_firebaseRestUrl/riders.json');
-      await http.post(
-        uri,
-        body: json.encode({
-          'name': name,
-          'phone': phone,
-          'vehicle': vehicle,
-          'password': password,
-          'isApproved': false,
-          'createdAt': DateTime.now().toIso8601String(),
-        }),
-      );
-
-      setState(() {
-        _isLoading = false;
-        _isRegistering = false;
-      });
-      _showMsg('✅ रजिस्ट्रेशन सफल! एडमिन अप्रूवल के बाद ही लॉगिन कर सकेंगे।', Colors.green);
-    } catch (e) {
-      setState(() => _isLoading = false);
-      _showMsg('रजिस्ट्रेशन एरर: $e', Colors.red);
-    }
-  }
-
-  Future<void> _fetchPendingRidersRest() async {
-    setState(() => _isLoading = true);
-    try {
-      final res = await http.get(Uri.parse('$_firebaseRestUrl/riders.json'));
-      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
-        Map<String, dynamic> data = json.decode(res.body);
-        List<Map<String, dynamic>> list = [];
-        data.forEach((key, value) {
-          if (value is Map) {
-            var r = Map<String, dynamic>.from(value);
-            r['riderId'] = key;
-            if (r['isApproved'] != true) {
-              list.add(r);
-            }
-          }
-        });
-        setState(() => _pendingRiders = list);
-      } else {
-        setState(() => _pendingRiders = []);
-      }
-    } catch (e) {
-      debugPrint("Fetch pending error: $e");
+      debugPrint("Fetch orders error: $e");
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoadingOrders = false);
     }
   }
 
-  Future<void> _approveRider(String riderId) async {
-    try {
-      await http.patch(
-        Uri.parse('$_firebaseRestUrl/riders/$riderId.json'),
-        body: json.encode({'isApproved': true}),
-      );
-      _showMsg('✅ राइडर सक्सेसफुली अप्रूव हो गया!', Colors.green);
-      _fetchPendingRidersRest();
-    } catch (e) {
-      _showMsg('अप्रूवल एरर: $e', Colors.red);
+  double _calculateGrandTotal() {
+    double total = 0.0;
+    for (var item in CakeDatabase.cartItems) {
+      double price = double.tryParse(item['price']?.toString() ?? '0') ?? 0.0;
+      double qty = double.tryParse(item['qty']?.toString() ?? '1') ?? 1.0;
+      total += (price * qty);
     }
+    return total;
   }
 
-  void _showMsg(String msg, Color color) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
-    }
-  }
-
-  void _acceptOrder() {
-    setState(() {
-      _isAcceptedByRider = true;
-    });
-    HapticFeedback.mediumImpact();
-    _showMsg('✅ आपने आर्डर स्वीकार कर लिया है! अब डिलीवरी पूरी करें।', Colors.green);
-  }
-
-  Future<void> _updateOrderStatus(Map<String, dynamic> order, String newStatus) async {
-    String orderId = order['orderId'];
-    try {
-      await http.patch(
-        Uri.parse('$_firebaseRestUrl/orders/$orderId.json'),
-        body: json.encode({
-          'orderStatus': newStatus,
-          'status': newStatus,
-        }),
-      );
-      HapticFeedback.mediumImpact();
-      _showMsg('🎉 डिलीवरी सफलतापूर्वक पूरी हो गई! कमाई जुड़ गई है।', Colors.green);
-      
-      // 📦 आर्डर को लोकल हिस्ट्री में सेव करें
-      order['orderStatus'] = newStatus;
-      await _saveOrderToLocalHistory(order);
-
-      setState(() {
-        _latestOrder = null; 
-        _isAcceptedByRider = false; 
-      });
-    } catch (e) {
-      debugPrint("Status update error: $e");
-    }
-  }
-
-  // 📜 पुराने डिलीवर ऑर्डर्स की हिस्ट्री देखने वाली स्क्रीन / डायलॉग
-  void _showHistoryDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('📜 पुरानी आर्डर हिस्ट्री (${_deliveredHistoryList.length})'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: _deliveredHistoryList.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('अभी तक कोई पुराना डिलीवर आर्डर सेव नहीं है!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _deliveredHistoryList.length,
-                  itemBuilder: (context, index) {
-                    var ord = _deliveredHistoryList[index];
-                    String name = ord['customerName'] ?? ord['name'] ?? 'Customer';
-                    String amount = ord['grandTotal']?.toString() ?? ord['totalAmount']?.toString() ?? '0';
-                    String timeStr = _formatOrderTime(ord['timestamp'] ?? ord['createdAt'] ?? ord['time']);
-                    
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text('समय: $timeStr\nअमाउंट: ₹$amount', style: const TextStyle(fontSize: 12)),
-                        trailing: const Icon(Icons.check_circle, color: Colors.green),
-                        isThreeLine: true,
-                      ),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('बंद करें'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showOrderDetailsDialog(Map<String, dynamic> order) {
-    String customerName = order['customerName'] ?? order['name'] ?? 'Customer';
-    String phone = order['customerPhone'] ?? order['phone'] ?? '';
-    String address = order['customerAddress'] ?? order['deliveryAddress'] ?? order['address'] ?? 'पता उपलब्ध नहीं';
-    String shopAddress = order['shopAddress'] ?? order['pickupAddress'] ?? 'केक शॉप (मुख्य शाखा, फरीदाबाद)';
-    String orderTimeStr = _formatOrderTime(order['timestamp'] ?? order['createdAt'] ?? order['time']);
+  Future<void> _placeOrder() async {
+    if (CakeDatabase.cartItems.isEmpty) return;
+    setState(() => _isCheckingOut = true);
     
-    var itemsRaw = order['items'];
-    String itemsText = '';
-    if (itemsRaw is List) {
-      itemsText = itemsRaw.map((it) => "${it['name'] ?? 'Item'} (x${it['qty'] ?? 1})").join(', ');
-    } else {
-      itemsText = itemsRaw?.toString() ?? 'आइटम विवरण नहीं';
+    double grandTotal = _calculateGrandTotal();
+
+    var newOrder = {
+      'customerName': CakeDatabase.currentCustomerName,
+      'customerPhone': CakeDatabase.currentUserPhone,
+      'customerAddress': CakeDatabase.currentDeliveryAddress.isEmpty ? 'पता उपलब्ध नहीं' : CakeDatabase.currentDeliveryAddress,
+      'shopName': CakeDatabase.bakeryShop['shopName'] ?? 'Viziag Mart',
+      'shopAddress': CakeDatabase.bakeryShop['shopAddress'] ?? CakeDatabase.bakeryShop['address'] ?? 'Faridabad',
+      'items': CakeDatabase.cartItems,
+      'grandTotal': grandTotal,
+      'totalAmount': grandTotal,
+      'status': 'Pending',
+      'orderStatus': 'Pending ⏳',
+      'orderTime': DateTime.now().toIso8601String(),
+    };
+
+    try {
+      // REST API के जरिए सिक्योर पोस्ट रिक्वेस्ट
+      final response = await http.post(
+        Uri.parse('${CakeDatabase.firebaseRestUrl}/orders.json'),
+        body: json.encode(newOrder),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (mounted) {
+          setState(() {
+            CakeDatabase.cartItems.clear();
+          });
+          HapticFeedback.mediumImpact();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('🎉 आर्डर सफलतापूर्वक प्लेस हो गया!'), backgroundColor: Colors.green),
+          );
+          _fetchLatestOrdersFromCloud(); // आर्डर देने के बाद तुरंत लिस्ट रिफ्रेश करें
+        }
+      } else {
+        throw Exception("Failed to post order");
+      }
+    } catch (e) {
+      debugPrint("Place order error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('❌ आर्डर प्लेस करने में विफल, कृपया दोबारा कोशिश करें'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCheckingOut = false);
     }
-
-    String amount = order['grandTotal']?.toString() ?? order['totalAmount']?.toString() ?? order['amount']?.toString() ?? '0';
-    String paymentMode = order['paymentMode'] ?? order['paymentType'] ?? 'COD';
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('📦 ऑर्डर विवरण: $customerName'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('🕒 ऑर्डर का समय: $orderTimeStr', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
-              const Divider(),
-              const Text('🏬 पिकअप (शॉप एड्रेस):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-              Text(shopAddress, style: const TextStyle(fontSize: 13)),
-              const Divider(),
-              const Text('📍 डिलीवरी (ग्राहक का पता):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-              Text(address, style: const TextStyle(fontSize: 13)),
-              const Divider(),
-              Text('📞 मोबाइल नंबर: $phone'),
-              const SizedBox(height: 6),
-              Text('🛒 आइटम्स: $itemsText'),
-              const SizedBox(height: 6),
-              Text('💰 कुल राशि: ₹$amount'),
-              const SizedBox(height: 6),
-              Text('💳 पेमेंट मोड: $paymentMode'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('बंद करें'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoginForm() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('राइडर लॉगिन', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _phoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड (या एडमिन tarun#1)', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
-          onPressed: _isLoading ? null : _loginRider,
-          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('लॉगिन करें'),
-        ),
-        const SizedBox(height: 10),
-        TextButton(
-          onPressed: () => setState(() => _isRegistering = true),
-          child: const Text('नया राइडर रजिस्ट्रेशन करें'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRegisterForm() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('नया राइडर रजिस्ट्रेशन', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _regNameController,
-          decoration: const InputDecoration(labelText: 'पूरा नाम', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _regPhoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _regVehicleController,
-          decoration: const InputDecoration(labelText: 'वाहन का नाम/नंबर (जैसे: Bike - DL 1234)', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _regPasswordController,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.all(12)),
-          onPressed: _isLoading ? null : _registerRider,
-          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('रजिस्टर करें'),
-        ),
-        const SizedBox(height: 10),
-        TextButton(
-          onPressed: () => setState(() => _isRegistering = false),
-          child: const Text('पहले से अकाउंट है? लॉगिन करें'),
-        ),
-      ],
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isLoggedIn) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFF8F9FA),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 1,
-          title: Text(_isRegistering ? '📝 नया राइडर रजिस्ट्रेशन' : '🚴‍♂️ राइडर पोर्टल ल
+    double grandTotal = _calculateGrandTotal();
+
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          Container(
+            color: const Color(0xFF1E293B),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: TabBar(
+                    labelColor: Color(0xFFF59E0B),
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: Color(0xFFF59E0B),
+                    tabs: [Tab(text: '🛒 मेरा कार्ट'), Tab(text: '📦 आर्डर इतिहास')],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Color(0xFFF59E0B)),
+                  onPressed: _fetchLatestOrdersFromCloud,
+                  tooltip: 'Refresh Orders',
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                // 1st Tab: Cart View
+                CakeDatabase.cartItems.isEmpty
+                    ? const Center(child: Text('आपका कार्ट खाली है', style: TextStyle(color: Colors.grey)))
+                    : Column(
+                        children: [
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: CakeDatabase.cartItems.length,
+                              itemBuilder: (context, index) {
+                                var item = CakeDatabase.cartItems[index];
+                                return Card(
+                                  color: const Color(0xFF1E293B),
+                                  margin: const EdgeInsets.all(8),
+                                  child: ListTile(
+                                    leading: ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                                                          child: buildShopOrProdImage(
+                                      item['image'] ?? item['imageUrl'] ?? item['itemImage'] ?? item['photo'] ?? item['img'] ?? item['productImage'],
+                                      45,
+                                      45,
+                                    Icons.fastfood,
+                                       ),                                     
+
+                                    ),
+                                    title: Text(item['name'] ?? 'Item', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    subtitle: Text('₹${item['price']} x ${item['qty']} ${item['unit'] ?? ''}'),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () => setState(() => CakeDatabase.cartItems.removeAt(index)),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            color: const Color(0xFF1E293B),
+                            child: Row(
+                              children: [
+                                Text('कुल: ₹${grandTotal.toInt()}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                const Spacer(),
+                                _isCheckingOut
+                                    ? const CircularProgressIndicator()
+                                    : ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), foregroundColor: Colors.black87),
+                                        onPressed: _placeOrder,
+                                        child: const Text('आर्डर दें', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                
+                // 2nd Tab: Order History View
+                CakeDatabase.localOrdersCache.isEmpty
+                    ? Center(
+                        child: _isLoadingOrders
+                            ? const CircularProgressIndicator()
+                            : const Text('कोई पिछला आर्डर नहीं है', style: TextStyle(color: Colors.grey)),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _fetchLatestOrdersFromCloud,
+                        child: ListView.builder(
+                          itemCount: CakeDatabase.localOrdersCache.length,
+                          itemBuilder: (context, index) {
+                            var ord = CakeDatabase.localOrdersCache[index];
+                            String status = ord['orderStatus'] ?? ord['status'] ?? 'Pending';
+                            var orderTotal = ord['grandTotal'] ?? ord['totalAmount'] ?? 0;
+                            var itemsList = ord['items'] as List<dynamic>? ?? [];
+
+                            return Card(
+                              color: const Color(0xFF1E293B),
+                              margin: const EdgeInsets.all(8),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('आर्डर #${ord['orderId'] != null && ord['orderId'].toString().length > 8 ? ord['orderId'].toString().substring(0, 8) : ord['orderId'] ?? ''}', 
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                        Text('₹${orderTotal.toString()}', 
+                                            style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 16)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text('दुकान: ${ord['shopName'] ?? 'Viziag Mart'}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                                    Text('दुकान का पता: ${ord['shopAddress'] ?? 'Faridabad'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                    const SizedBox(height: 4),
+                                    Text('डिलीवरी पता: ${ord['customerAddress'] ?? ord['deliveryAddress'] ?? 'पता उपलब्ध नहीं'}', 
+                                        style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                    const Divider(color: Colors.white24, height: 16),
+                                    ...itemsList.map((it) {
+                                      var m = it is Map ? it : {};
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2.0),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text('• ${m['name'] ?? 'Item'} (x${m['qty'] ?? 1})', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                                            Text('₹${(double.tryParse(m['price'].toString()) ?? 0) * (double.tryParse(m['qty'].toString()) ?? 1)}', 
+                                                style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: status.toLowerCase().contains('delivered') ? Colors.green.withOpacity(0.2) : Colors.amber.withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text('स्टेटस: $status', style: TextStyle(color: status.toLowerCase().contains('delivered') ? Colors.greenAccent : Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                                        ),
+                                        Text(ord['orderTime'] != null && ord['orderTime'].toString().length >= 16 ? ord['orderTime'].toString().substring(0, 16).replaceAll('T', ' ') : '', 
+                                            style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
