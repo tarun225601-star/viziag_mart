@@ -14,7 +14,7 @@ void main() async {
   runApp(const ViziagMartApp());
 }
 
-// 🌐 डेटाबेस कॉन्फिग और लोकल स्टेट
+// 🌐 डेटाबेस लिंक
 class ViziagDatabase {
   static String firebaseRestUrl = "https://viziag-mart-default-rtdb.firebaseio.com";
 }
