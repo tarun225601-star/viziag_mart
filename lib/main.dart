@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AlzaSyDummyKeyForViziawork",
+        appId: "1:23456789:android:abcdef",
+        messagingSenderId: "123456789",
+        projectId: "viziawork",
+        databaseURL: "https://viziawork-default-rtdb.firebaseio.com/",
+      ),
+    );
   } catch (e) {
     debugPrint("Firebase init warning: $e");
   }
@@ -15,7 +25,8 @@ void main() async {
 }
 
 class ViziagDatabase {
-  static String firebaseRestUrl = "https://viziag-mart-default-rtdb.firebaseio.com";
+  // 🟢 तुम्हारा असली और पक्का Firebase URL
+  static String firebaseRestUrl = "https://viziawork-default-rtdb.firebaseio.com";
 }
 
 class ViziagMartApp extends StatelessWidget {
@@ -122,11 +133,20 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
       if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
         var data = json.decode(res.body);
         var loadedList = [];
+        int currentTime = DateTime.now().millisecondsSinceEpoch;
+
         data.forEach((key, val) {
           if (val is Map) {
             var mapVal = Map<String, dynamic>.from(val);
             mapVal['id'] = key;
-            loadedList.add(mapVal);
+
+            // 🟢 ऑटो-एक्सपायरी: 24 घंटे बाद पोस्ट अपने आप हट जाएगी
+            int postTime = mapVal['timestamp'] ?? 0;
+            int expiryLimit = postTime + (24 * 60 * 60 * 1000);
+
+            if (currentTime < expiryLimit) {
+              loadedList.add(mapVal);
+            }
           }
         });
         setState(() {
@@ -180,7 +200,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
           else
             ..._liveBroadcasts.map((item) {
               String serviceMode = item['serviceMode'] ?? 'होम डिलीवरी + पिकअप';
-              bool hasVideo = item['videoUrl'] != null && item['videoUrl'].toString().isNotEmpty;
+              String? imageBase64 = item['imageBase64'];
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 15),
@@ -189,37 +209,17 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Stack(
-                      children: [
-                        if (item['image'] != null && item['image'].toString().isNotEmpty)
-                          ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                            child: Image.network(
-                              item['image'],
-                              height: 190,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) => Container(height: 100, color: Colors.grey.shade300, child: const Icon(Icons.broken_image)),
-                            ),
-                          ),
-                        if (hasVideo)
-                          Positioned(
-                            top: 10,
-                            right: 10,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.8), borderRadius: BorderRadius.circular(20)),
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.play_circle_fill, color: Colors.amber, size: 16),
-                                  SizedBox(width: 4),
-                                  Text('10s वीडियो', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                    if (imageBase64 != null && imageBase64.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                        child: Image.memory(
+                          base64Decode(imageBase64),
+                          height: 190,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => Container(height: 100, color: Colors.grey.shade300, child: const Icon(Icons.broken_image)),
+                        ),
+                      ),
                     Padding(
                       padding: const EdgeInsets.all(14),
                       child: Column(
@@ -336,10 +336,12 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
   final locationCtrl = TextEditingController();
   final validTimeCtrl = TextEditingController();
 
-  String _imageUrl = '';
-  String _videoUrl = '';
+  String _imageBase64 = '';
+  String _videoBase64 = '';
+  bool _isImageSelected = false;
+  bool _isVideoSelected = false;
+
   String _selectedServiceMode = 'होम डिलीवरी + दुकान से पिकअप दोनों उपलब्ध';
-  
   final List<String> _serviceOptions = [
     'होम डिलीवरी + दुकान से पिकअप दोनों उपलब्ध',
     'केवल दुकान से पिकअप (Self Pickup Only)',
@@ -350,6 +352,36 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
   bool _isLoading = false;
   final String _shopName = 'मेरी दुकान (ऑल इन वन)';
   final String _shopPhone = '9876543210';
+
+  Future<void> _pickImageFromGallery() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 40);
+    if (pickedFile != null) {
+      Uint8List bytes = await pickedFile.readAsBytes();
+      setState(() {
+        _imageBase64 = base64Encode(bytes);
+        _isImageSelected = true;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ गैलरी से फोटो चुन ली गई!')));
+      }
+    }
+  }
+
+  Future<void> _pickVideoFromGallery() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickVideo(source: ImageSource.gallery, maxDuration: const Duration(seconds: 10));
+    if (pickedFile != null) {
+      Uint8List bytes = await pickedFile.readAsBytes();
+      setState(() {
+        _videoBase64 = base64Encode(bytes);
+        _isVideoSelected = true;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 10s वीडियो चुन लिया गया!')));
+      }
+    }
+  }
 
   Future<void> _sendLiveNotificationBroadcast() async {
     if (itemNameCtrl.text.trim().isEmpty || rateCtrl.text.trim().isEmpty) {
@@ -383,33 +415,39 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
         'location': locationCtrl.text.trim().isEmpty ? 'Faridabad Market' : locationCtrl.text.trim(),
         'validTill': validTimeCtrl.text.trim().isEmpty ? 'आज शाम तक' : validTimeCtrl.text.trim(),
         'serviceMode': _selectedServiceMode,
-        'image': _imageUrl.isEmpty ? 'https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?auto=format&fit=crop&w=600&q=80' : _imageUrl,
-        'videoUrl': _videoUrl,
+        'imageBase64': _imageBase64,
+        'videoBase64': _videoBase64,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       };
 
-      await http.post(
+      final response = await http.post(
         Uri.parse('${ViziagDatabase.firebaseRestUrl}/live_broadcasts.json'),
         body: json.encode(broadcastData),
       );
 
-      if (mounted) {
-        itemNameCtrl.clear();
-        rateCtrl.clear();
-        validTimeCtrl.clear();
-        _imageUrl = '';
-        _videoUrl = '';
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (mounted) {
+          itemNameCtrl.clear();
+          rateCtrl.clear();
+          validTimeCtrl.clear();
+          setState(() {
+            _imageBase64 = '';
+            _videoBase64 = '';
+            _isImageSelected = false;
+            _isVideoSelected = false;
+          });
 
-        showDialog(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: const Text('🚀 नोटिफिकेशन लाइव भेज दिया गया!'),
-            content: Text('फोटो, 10s वीडियो और डिलीवरी मोड के साथ नोटिफिकेशन पोस्ट हो गया है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(c), child: const Text('शानदार!')),
-            ],
-          ),
-        );
+          showDialog(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: const Text('🚀 नोटिफिकेशन लाइव भेज दिया गया!'),
+              content: Text('गैलरी की फोटो और विवरण के साथ पोस्ट लाइव हो गई है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(c), child: const Text('शानदार!')),
+              ],
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint("Broadcast Error: $e");
@@ -518,34 +556,30 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
                     if (val != null) setState(() => _selectedServiceMode = val);
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 15),
                 Row(
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: _imageUrl.isEmpty ? Colors.grey.shade200 : Colors.green.shade100, foregroundColor: Colors.black87),
-                        onPressed: () {
-                          setState(() {
-                            _imageUrl = 'https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?auto=format&fit=crop&w=600&q=80';
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📷 फोटो अटैच हो गई!')));
-                        },
-                        icon: const Icon(Icons.add_a_photo, size: 16),
-                        label: Text(_imageUrl.isEmpty ? 'फोटो जोड़ें' : '✅ फोटो जुड़ गई', style: const TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isImageSelected ? Colors.green.shade100 : Colors.grey.shade200,
+                          foregroundColor: Colors.black87,
+                        ),
+                        onPressed: _pickImageFromGallery,
+                        icon: const Icon(Icons.photo_library, size: 16),
+                        label: Text(_isImageSelected ? '✅ फोटो चुन ली' : 'गैलरी से फोटो चुनें', style: const TextStyle(fontSize: 11)),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: _videoUrl.isEmpty ? Colors.grey.shade200 : Colors.amber.shade100, foregroundColor: Colors.black87),
-                        onPressed: () {
-                          setState(() {
-                            _videoUrl = 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4';
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📹 10s वीडियो अटैच हो गया!')));
-                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isVideoSelected ? Colors.amber.shade100 : Colors.grey.shade200,
+                          foregroundColor: Colors.black87,
+                        ),
+                        onPressed: _pickVideoFromGallery,
                         icon: const Icon(Icons.videocam, size: 16),
-                        label: Text(_videoUrl.isEmpty ? '10s वीडियो' : '✅ वीडियो जुड़ गया', style: const TextStyle(fontSize: 11)),
+                        label: Text(_isVideoSelected ? '✅ वीडियो चुन लिया' : '10s वीडियो चुनें', style: const TextStyle(fontSize: 11)),
                       ),
                     ),
                   ],
