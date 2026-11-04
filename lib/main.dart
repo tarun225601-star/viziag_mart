@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'database_models.dart';
-import 'image_picker_helper.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -14,6 +12,11 @@ void main() async {
   }
 
   runApp(const ViziagMartApp());
+}
+
+// 🌐 डेटाबेस कॉन्फिग और लोकल स्टेट
+class ViziagDatabase {
+  static String firebaseRestUrl = "https://viziag-mart-default-rtdb.firebaseio.com";
 }
 
 class ViziagMartApp extends StatelessWidget {
@@ -116,15 +119,17 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
 
   Future<void> _fetchLiveBroadcasts() async {
     try {
-      final res = await http.get(Uri.parse('${CakeDatabase.firebaseRestUrl}/live_broadcasts.json'));
-      if (res.statusCode == 200 && res.body != 'null') {
+      final res = await http.get(Uri.parse('${ViziagDatabase.firebaseRestUrl}/live_broadcasts.json'));
+      if (res.statusCode == 200 && res.body != 'null' && res.body.isNotEmpty) {
         Map<String, dynamic> data = json.decode(res.body);
-        List> loaded = [];
+        List> loadedList = [];
         data.forEach((key, val) {
-          loaded.add({...val, 'id': key});
+          if (val is Map) {
+            loadedList.add({...Map<String, dynamic>.from(val), 'id': key});
+          }
         });
         setState(() {
-          _liveBroadcasts = loaded.reversed.toList();
+          _liveBroadcasts = loadedList.reversed.toList();
         });
       }
     } catch (e) {
@@ -367,7 +372,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
 
     setState(() => _isLoading = true);
     try {
-      _vendorWalletBalance -= 100; // ₹100 कटौती
+      _vendorWalletBalance -= 100;
 
       var broadcastData = {
         'shopName': _shopName,
@@ -383,7 +388,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
       };
 
       await http.post(
-        Uri.parse('${CakeDatabase.firebaseRestUrl}/live_broadcasts.json'),
+        Uri.parse('${ViziagDatabase.firebaseRestUrl}/live_broadcasts.json'),
         body: json.encode(broadcastData),
       );
 
@@ -417,7 +422,6 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // 💳 वॉलेट बैलेंस कार्ड
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -449,7 +453,6 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
         ),
         const SizedBox(height: 20),
 
-        // 📢 ब्रॉडकास्ट पोस्ट फॉर्म
         Card(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 2,
