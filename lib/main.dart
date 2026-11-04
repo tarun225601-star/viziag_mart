@@ -25,7 +25,6 @@ void main() async {
 }
 
 class ViziagDatabase {
-  // 🟢 तुम्हारा असली और पक्का Firebase URL
   static String firebaseRestUrl = "https://viziawork-default-rtdb.firebaseio.com";
 }
 
@@ -108,7 +107,7 @@ class _MainHubScreenState extends State<MainHubScreen> {
 }
 
 // =============================================================
-// 1️⃣ ग्राहक डैशबोर्ड (Customer / Buyer Dashboard)
+// 1️⃣ ग्राहक डैशबोर्ड (Customer / Buyer Dashboard with Search Bar)
 // =============================================================
 class CustomerMarketplaceView extends StatefulWidget {
   const CustomerMarketplaceView({super.key});
@@ -119,12 +118,21 @@ class CustomerMarketplaceView extends StatefulWidget {
 
 class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
   var _liveBroadcasts = [];
+  var _filteredBroadcasts = [];
   bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _fetchLiveBroadcasts();
+    _searchController.addListener(_filterSearch);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchLiveBroadcasts() async {
@@ -140,9 +148,8 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
             var mapVal = Map<String, dynamic>.from(val);
             mapVal['id'] = key;
 
-            // 🟢 ऑटो-एक्सपायरी: 24 घंटे बाद पोस्ट अपने आप हट जाएगी
             int postTime = mapVal['timestamp'] ?? 0;
-            int expiryLimit = postTime + (24 * 60 * 60 * 1000);
+            int expiryLimit = postTime + (24 * 60 * 60 * 1000); // 24 घंटे की समय सीमा
 
             if (currentTime < expiryLimit) {
               loadedList.add(mapVal);
@@ -151,6 +158,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
         });
         setState(() {
           _liveBroadcasts = loadedList.reversed.toList();
+          _filteredBroadcasts = _liveBroadcasts;
         });
       }
     } catch (e) {
@@ -160,6 +168,19 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
     }
   }
 
+  void _filterSearch() {
+    String query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredBroadcasts = _liveBroadcasts.where((item) {
+        String itemName = (item['itemName'] ?? '').toLowerCase();
+        String shopName = (item['shopName'] ?? '').toLowerCase();
+        String ownerName = (item['ownerName'] ?? '').toLowerCase();
+        String location = (item['location'] ?? '').toLowerCase();
+        return itemName.contains(query) || shopName.contains(query) || ownerName.contains(query) || location.contains(query);
+      }).toList();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -167,6 +188,22 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'समान, दुकान या मालिक का नाम खोजें...',
+              prefixIcon: const Icon(Icons.search, color: Colors.green),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -179,7 +216,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '⚡ आसपास की दुकानों (मोबाइल, कपड़े, फल, किराना) के लाइव अपडेट देखें!',
+                    '⚡ आसपास की दुकानों के लाइव अपडेट देखें और सीधा कॉल करें!',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                 ),
@@ -190,17 +227,18 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
 
           if (_isLoading)
             const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
-          else if (_liveBroadcasts.isEmpty)
+          else if (_filteredBroadcasts.isEmpty)
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(40),
-                child: Text('फिलहाल कोई लाइव नोटिफिकेशन उपलब्ध नहीं है।', style: TextStyle(color: Colors.grey)),
+                child: Text('कोई लाइव नोटिफिकेशन नहीं मिला।', style: TextStyle(color: Colors.grey)),
               ),
             )
           else
-            ..._liveBroadcasts.map((item) {
+            ..._filteredBroadcasts.map((item) {
               String serviceMode = item['serviceMode'] ?? 'होम डिलीवरी + पिकअप';
               String? imageBase64 = item['imageBase64'];
+              String? shopLogoBase64 = item['shopLogoBase64'];
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 15),
@@ -225,15 +263,40 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // 🟢 दुकान की प्रोफाइल, लोगो और मालिक का नाम
                           Row(
                             children: [
-                              Icon(Icons.store, size: 18, color: Colors.green.shade700),
-                              const SizedBox(width: 6),
-                              Text(
-                                item['shopName'] ?? 'दुकानदार',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              shopLogoBase64 != null && shopLogoBase64.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: Image.memory(
+                                        base64Decode(shopLogoBase64),
+                                        width: 40,
+                                        height: 40,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  : CircleAvatar(
+                                      backgroundColor: Colors.green.shade100,
+                                      radius: 20,
+                                      child: const Icon(Icons.store, color: Colors.green, size: 22),
+                                    ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['shopName'] ?? 'दुकानदार',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
+                                    Text(
+                                      'मालिक: ${item['ownerName'] ?? "व्यापारी"}',
+                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const Spacer(),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(6)),
@@ -244,7 +307,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const Divider(height: 15),
                           Text(
                             item['itemName'] ?? '',
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -321,7 +384,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
 }
 
 // =============================================================
-// 2️⃣ वेंडर डैशबोर्ड (Vendor / Broadcast Posting Dashboard)
+// 2️⃣ वेंडर डैशबोर्ड (Vendor Dashboard with Shop Profile & Logo)
 // =============================================================
 class VendorDashboardPortalView extends StatefulWidget {
   const VendorDashboardPortalView({super.key});
@@ -331,13 +394,21 @@ class VendorDashboardPortalView extends StatefulWidget {
 }
 
 class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
+  // 🟢 दुकान और प्रोफाइल कंट्रोल्स
+  final shopNameCtrl = TextEditingController();
+  final ownerNameCtrl = TextEditingController();
+  final shopPhoneCtrl = TextEditingController();
+  
   final itemNameCtrl = TextEditingController();
   final rateCtrl = TextEditingController();
   final locationCtrl = TextEditingController();
   final validTimeCtrl = TextEditingController();
 
+  String _shopLogoBase64 = '';
   String _imageBase64 = '';
   String _videoBase64 = '';
+  
+  bool _isLogoSelected = false;
   bool _isImageSelected = false;
   bool _isVideoSelected = false;
 
@@ -350,8 +421,22 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
 
   int _vendorWalletBalance = 500;
   bool _isLoading = false;
-  final String _shopName = 'मेरी दुकान (ऑल इन वन)';
-  final String _shopPhone = '9876543210';
+
+  // 🟢 दुकान का लोगो/प्रोफाइल फोटो चुनने का फंक्शन
+  Future<void> _pickShopLogo() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 30);
+    if (pickedFile != null) {
+      Uint8List bytes = await pickedFile.readAsBytes();
+      setState(() {
+        _shopLogoBase64 = base64Encode(bytes);
+        _isLogoSelected = true;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ दुकान का लोगो/प्रोफाइल फोटो सेट हो गया!')));
+      }
+    }
+  }
 
   Future<void> _pickImageFromGallery() async {
     final picker = ImagePicker();
@@ -363,7 +448,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
         _isImageSelected = true;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ गैलरी से फोटो चुन ली गई!')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ सामान की फोटो चुन ली गई!')));
       }
     }
   }
@@ -384,6 +469,10 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
   }
 
   Future<void> _sendLiveNotificationBroadcast() async {
+    if (shopNameCtrl.text.trim().isEmpty || shopPhoneCtrl.text.trim().length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया दुकान का नाम और सही मोबाइल नंबर दर्ज करें!'), backgroundColor: Colors.red));
+      return;
+    }
     if (itemNameCtrl.text.trim().isEmpty || rateCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया आइटम का नाम और रेट भरें!'), backgroundColor: Colors.red));
       return;
@@ -408,8 +497,10 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
       _vendorWalletBalance -= 100;
 
       var broadcastData = {
-        'shopName': _shopName,
-        'phone': _shopPhone,
+        'shopName': shopNameCtrl.text.trim(),
+        'ownerName': ownerNameCtrl.text.trim().isEmpty ? 'व्यापारी' : ownerNameCtrl.text.trim(),
+        'phone': shopPhoneCtrl.text.trim(),
+        'shopLogoBase64': _shopLogoBase64,
         'itemName': itemNameCtrl.text.trim(),
         'rate': rateCtrl.text.trim(),
         'location': locationCtrl.text.trim().isEmpty ? 'Faridabad Market' : locationCtrl.text.trim(),
@@ -441,7 +532,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
             context: context,
             builder: (c) => AlertDialog(
               title: const Text('🚀 नोटिफिकेशन लाइव भेज दिया गया!'),
-              content: Text('गैलरी की फोटो और विवरण के साथ पोस्ट लाइव हो गई है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
+              content: Text('आपकी दुकान की प्रोफाइल और फोटो के साथ पोस्ट लाइव हो गई है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(c), child: const Text('शानदार!')),
               ],
@@ -514,6 +605,50 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
                   ],
                 ),
                 const Divider(height: 20),
+
+                // 🟢 दुकान की प्रोफाइल और मालिक की जानकारी
+                const Text('🏪 दुकान एवं मालिक की प्रोफाइल', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: shopNameCtrl,
+                        decoration: const InputDecoration(labelText: 'दुकान का नाम', border: OutlineInputBorder(), isDense: true, prefixIcon: Icon(Icons.store)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: ownerNameCtrl,
+                        decoration: const InputDecoration(labelText: 'मालिक का नाम', border: OutlineInputBorder(), isDense: true, prefixIcon: Icon(Icons.person)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: shopPhoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  decoration: const InputDecoration(labelText: 'मोबाइल नंबर (Calling Number)', border: OutlineInputBorder(), counterText: '', isDense: true, prefixIcon: Icon(Icons.phone)),
+                ),
+                const SizedBox(height: 12),
+
+                // 🟢 दुकान का लोगो/फोटो अपलोड बटन
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _isLogoSelected ? Colors.green : Colors.black87,
+                    side: BorderSide(color: _isLogoSelected ? Colors.green : Colors.grey),
+                  ),
+                  onPressed: _pickShopLogo,
+                  icon: const Icon(Icons.add_a_photo, size: 16),
+                  label: Text(_isLogoSelected ? '✅ दुकान का लोगो/फोटो सेट है' : 'दुकान का लोगो/प्रोफाइल फोटो लगाएं', style: const TextStyle(fontSize: 11)),
+                ),
+                const Divider(height: 25),
+
+                const Text('📦 सामान एवं ऑफर की जानकारी', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13)),
+                const SizedBox(height: 8),
                 TextField(
                   controller: itemNameCtrl,
                   decoration: const InputDecoration(labelText: 'सामान / स्टॉक का नाम (उदा: 5G मोबाइल / मीठा शरीफा)', border: OutlineInputBorder(), isDense: true),
