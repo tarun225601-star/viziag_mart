@@ -14,7 +14,6 @@ void main() async {
   runApp(const ViziagMartApp());
 }
 
-// 🌐 डेटाबेस लिंक
 class ViziagDatabase {
   static String firebaseRestUrl = "https://viziag-mart-default-rtdb.firebaseio.com";
 }
@@ -403,7 +402,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
           context: context,
           builder: (c) => AlertDialog(
             title: const Text('🚀 नोटिफिकेशन लाइव भेज दिया गया!'),
-            content: Text('फोटो, 10s वीडियो और डिलीवरी मोड के साथ नोटिफिकेशन पोस्ट हो गया है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
+            content: Text('फोटो, 10s वीडियो और डिलीवरी मोड के साथ नोटिफिकेशन पोस्ट हो गया है。\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(c), child: const Text('शानदार!')),
             ],
@@ -530,7 +529,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📷 फोटो अटैच हो गई!')));
                         },
                         icon: const Icon(Icons.add_a_photo, size: 16),
-                        label: Text(_imageUrl.isEmpty ? 'फोटो जोड़ें' : '✅ फोटो जुड़ गई', style: const TextStyle(fontSize: 11)),
+                        label: Text(_imageUrl.isEmpty ? 'फोटो जोड़ें' : '✅ फोटो जुड़ गई', style: TextStyle(fontSize: 11)),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -544,7 +543,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📹 10s वीडियो अटैच हो गया!')));
                         },
                         icon: const Icon(Icons.videocam, size: 16),
-                        label: Text(_videoUrl.isEmpty ? '10s वीडियो' : '✅ वीडियो जुड़ गया', style: const TextStyle(fontSize: 11)),
+                        label: Text(_videoUrl.isEmpty ? '10s वीडियो' : '✅ वीडियो जुड़ गया', style: TextStyle(fontSize: 11)),
                       ),
                     ),
                   ],
