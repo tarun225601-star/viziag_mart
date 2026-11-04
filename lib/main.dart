@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -149,7 +150,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
             mapVal['id'] = key;
 
             int postTime = mapVal['timestamp'] ?? 0;
-            int expiryLimit = postTime + (24 * 60 * 60 * 1000); // 24 घंटे की समय सीमा
+            int expiryLimit = postTime + (24 * 60 * 60 * 1000); // 24 घंटे की समयावधि
 
             if (currentTime < expiryLimit) {
               loadedList.add(mapVal);
@@ -263,7 +264,6 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 🟢 दुकान की प्रोफाइल, लोगो और मालिक का नाम
                           Row(
                             children: [
                               shopLogoBase64 != null && shopLogoBase64.isNotEmpty
@@ -384,7 +384,7 @@ class _CustomerMarketplaceViewState extends State<CustomerMarketplaceView> {
 }
 
 // =============================================================
-// 2️⃣ वेंडर डैशबोर्ड (Vendor Dashboard with Shop Profile & Logo)
+// 2️⃣ वेंडर डैशबोर्ड (Permanent Profile + Direct Posting)
 // =============================================================
 class VendorDashboardPortalView extends StatefulWidget {
   const VendorDashboardPortalView({super.key});
@@ -394,21 +394,22 @@ class VendorDashboardPortalView extends StatefulWidget {
 }
 
 class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
-  // 🟢 दुकान और प्रोफाइल कंट्रोल्स
+  bool _isProfileSetup = false;
+
+  // प्रोफाइल कंट्रोल्स
   final shopNameCtrl = TextEditingController();
   final ownerNameCtrl = TextEditingController();
   final shopPhoneCtrl = TextEditingController();
-  
+  String _savedShopLogo = '';
+
+  // पोस्टिंग कंट्रोल्स
   final itemNameCtrl = TextEditingController();
   final rateCtrl = TextEditingController();
   final locationCtrl = TextEditingController();
   final validTimeCtrl = TextEditingController();
 
-  String _shopLogoBase64 = '';
   String _imageBase64 = '';
   String _videoBase64 = '';
-  
-  bool _isLogoSelected = false;
   bool _isImageSelected = false;
   bool _isVideoSelected = false;
 
@@ -422,19 +423,65 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
   int _vendorWalletBalance = 500;
   bool _isLoading = false;
 
-  // 🟢 दुकान का लोगो/प्रोफाइल फोटो चुनने का फंक्शन
+  @override
+  void initState() {
+    super.initState();
+    _loadVendorProfile();
+  }
+
+  // 🟢 मोबाइल की मेमोरी से हमेशा के लिए प्रोफाइल लोड करना
+  Future<void> _loadVendorProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? sName = prefs.getString('shop_name');
+    if (sName != null && sName.isNotEmpty) {
+      setState(() {
+        shopNameCtrl.text = sName;
+        ownerNameCtrl.text = prefs.getString('owner_name') ?? '';
+        shopPhoneCtrl.text = prefs.getString('shop_phone') ?? '';
+        _savedShopLogo = prefs.getString('shop_logo') ?? '';
+        _isProfileSetup = true;
+      });
+    }
+  }
+
+  // 🟢 प्रोफाइल को हमेशा के लिए सेव करना (ताकि दोबारा ऑप्शन न आए)
+  Future<void> _saveVendorProfile() async {
+    if (shopNameCtrl.text.trim().isEmpty || shopPhoneCtrl.text.trim().length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया दुकान का नाम और सही मोबाइल नंबर भरें!'), backgroundColor: Colors.red));
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('shop_name', shopNameCtrl.text.trim());
+    await prefs.setString('owner_name', ownerNameCtrl.text.trim());
+    await prefs.setString('shop_phone', shopPhoneCtrl.text.trim());
+    await prefs.setString('shop_logo', _savedShopLogo);
+
+    setState(() {
+      _isProfileSetup = true;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ दुकान की प्रोफाइल हमेशा के लिए सेव हो गई!')));
+    }
+  }
+
+  // 🟢 प्रोफाइल एडिट करने का ऑप्शन (यदि कभी बदलना हो)
+  void _editProfile() {
+    setState(() {
+      _isProfileSetup = false;
+    });
+  }
+
   Future<void> _pickShopLogo() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 30);
     if (pickedFile != null) {
       Uint8List bytes = await pickedFile.readAsBytes();
       setState(() {
-        _shopLogoBase64 = base64Encode(bytes);
-        _isLogoSelected = true;
+        _savedShopLogo = base64Encode(bytes);
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ दुकान का लोगो/प्रोफाइल फोटो सेट हो गया!')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ लोगो चुन लिया गया!')));
     }
   }
 
@@ -447,9 +494,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
         _imageBase64 = base64Encode(bytes);
         _isImageSelected = true;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ सामान की फोटो चुन ली गई!')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ सामान की फोटो चुन ली गई!')));
     }
   }
 
@@ -462,19 +507,13 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
         _videoBase64 = base64Encode(bytes);
         _isVideoSelected = true;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 10s वीडियो चुन लिया गया!')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 10s वीडियो चुन लिया गया!')));
     }
   }
 
   Future<void> _sendLiveNotificationBroadcast() async {
-    if (shopNameCtrl.text.trim().isEmpty || shopPhoneCtrl.text.trim().length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया दुकान का नाम और सही मोबाइल नंबर दर्ज करें!'), backgroundColor: Colors.red));
-      return;
-    }
     if (itemNameCtrl.text.trim().isEmpty || rateCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया आइटम का नाम और रेट भरें!'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ कृपया सामान का नाम और रेट भरें!'), backgroundColor: Colors.red));
       return;
     }
 
@@ -500,7 +539,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
         'shopName': shopNameCtrl.text.trim(),
         'ownerName': ownerNameCtrl.text.trim().isEmpty ? 'व्यापारी' : ownerNameCtrl.text.trim(),
         'phone': shopPhoneCtrl.text.trim(),
-        'shopLogoBase64': _shopLogoBase64,
+        'shopLogoBase64': _savedShopLogo,
         'itemName': itemNameCtrl.text.trim(),
         'rate': rateCtrl.text.trim(),
         'location': locationCtrl.text.trim().isEmpty ? 'Faridabad Market' : locationCtrl.text.trim(),
@@ -532,7 +571,7 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
             context: context,
             builder: (c) => AlertDialog(
               title: const Text('🚀 नोटिफिकेशन लाइव भेज दिया गया!'),
-              content: Text('आपकी दुकान की प्रोफाइल और फोटो के साथ पोस्ट लाइव हो गई है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
+              content: Text('आपकी दुकान से पोस्ट लाइव हो गई है।\n\nबचा वॉलेट बैलेंस: ₹$_vendorWalletBalance'),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(c), child: const Text('शानदार!')),
               ],
@@ -549,9 +588,77 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
 
   @override
   Widget build(BuildContext context) {
+    // 🟢 यदि वेंडर की प्रोफाइल पहले से सेट नहीं है, तो सिर्फ पहली बार यह सेटअप फॉर्म दिखेगा
+    if (!_isProfileSetup) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SizedBox(height: 20),
+          const Center(
+            child: Icon(Icons.store_mall_directory, size: 70, color: Colors.green),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '🏪 अपनी दुकान की परमानेंट प्रोफाइल बनाएं',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'यह जानकारी सिर्फ एक बार भरनी है, फिर हमेशा सेव रहेगी।',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 25),
+
+          TextField(
+            controller: shopNameCtrl,
+            decoration: const InputDecoration(labelText: 'दुकान का नाम (Shop Name)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.store)),
+          ),
+          const SizedBox(height: 15),
+          TextField(
+            controller: ownerNameCtrl,
+            decoration: const InputDecoration(labelText: 'मालिक का नाम (Owner Name)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person)),
+          ),
+          const SizedBox(height: 15),
+          TextField(
+            controller: shopPhoneCtrl,
+            keyboardType: TextInputType.phone,
+            maxLength: 10,
+            decoration: const InputDecoration(labelText: 'मोबाइल नंबर (Calling Number)', border: OutlineInputBorder(), counterText: '', prefixIcon: Icon(Icons.phone)),
+          ),
+          const SizedBox(height: 15),
+
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _savedShopLogo.isNotEmpty ? Colors.green : Colors.black87,
+              side: BorderSide(color: _savedShopLogo.isNotEmpty ? Colors.green : Colors.grey),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            onPressed: _pickShopLogo,
+            icon: const Icon(Icons.add_a_photo, size: 18),
+            label: Text(_savedShopLogo.isNotEmpty ? '✅ दुकान का लोगो/फोटो सेट हो गया' : 'दुकान का लोगो/प्रोफाइल फोटो लगाएं', style: const TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(height: 25),
+
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+              onPressed: _saveVendorProfile,
+              child: const Text('प्रोफाइल सेव करें और आगे बढ़ें ➔', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 🟢 एक बार प्रोफाइल बनने के बाद हमेशा यह सीधा पोस्टिंग डैशबोर्ड दिखेगा (बिना दोबारा डिटेल्स मांगे)
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // वॉलेट और परमानेंट प्रोफाइल कार्ड
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -565,24 +672,37 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
                 children: [
                   const Text('वेंडर वॉलेट बैलेंस', style: TextStyle(color: Colors.white70, fontSize: 12)),
                   const SizedBox(height: 4),
-                  Text('₹$_vendorWalletBalance', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+                  Text('₹$_vendorWalletBalance', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text('🏪 ${shopNameCtrl.text}', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                 ],
               ),
               const Spacer(),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                onPressed: () {
-                  setState(() => _vendorWalletBalance += 500);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💳 ₹500 का रीचार्ज सफल!'), backgroundColor: Colors.green));
-                },
-                icon: const Icon(Icons.add_card, size: 16),
-                label: const Text('रीचार्ज (+₹500)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+                    onPressed: () {
+                      setState(() => _vendorWalletBalance += 500);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💳 ₹500 का रीचार्ज सफल!'), backgroundColor: Colors.green));
+                    },
+                    icon: const Icon(Icons.add_card, size: 14),
+                    label: const Text('रीचार्ज (+₹500)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: _editProfile,
+                    child: const Text('✏️ प्रोफाइल बदलें', style: TextStyle(color: Colors.white70, fontSize: 11, decoration: TextDecoration.underline)),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 20),
 
+        // सामान पोस्ट करने का फॉर्म (बिना बार-बार दुकान का नाम पूछे)
         Card(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 2,
@@ -606,49 +726,6 @@ class _VendorDashboardPortalViewState extends State<VendorDashboardPortalView> {
                 ),
                 const Divider(height: 20),
 
-                // 🟢 दुकान की प्रोफाइल और मालिक की जानकारी
-                const Text('🏪 दुकान एवं मालिक की प्रोफाइल', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: shopNameCtrl,
-                        decoration: const InputDecoration(labelText: 'दुकान का नाम', border: OutlineInputBorder(), isDense: true, prefixIcon: Icon(Icons.store)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: ownerNameCtrl,
-                        decoration: const InputDecoration(labelText: 'मालिक का नाम', border: OutlineInputBorder(), isDense: true, prefixIcon: Icon(Icons.person)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: shopPhoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 10,
-                  decoration: const InputDecoration(labelText: 'मोबाइल नंबर (Calling Number)', border: OutlineInputBorder(), counterText: '', isDense: true, prefixIcon: Icon(Icons.phone)),
-                ),
-                const SizedBox(height: 12),
-
-                // 🟢 दुकान का लोगो/फोटो अपलोड बटन
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _isLogoSelected ? Colors.green : Colors.black87,
-                    side: BorderSide(color: _isLogoSelected ? Colors.green : Colors.grey),
-                  ),
-                  onPressed: _pickShopLogo,
-                  icon: const Icon(Icons.add_a_photo, size: 16),
-                  label: Text(_isLogoSelected ? '✅ दुकान का लोगो/फोटो सेट है' : 'दुकान का लोगो/प्रोफाइल फोटो लगाएं', style: const TextStyle(fontSize: 11)),
-                ),
-                const Divider(height: 25),
-
-                const Text('📦 सामान एवं ऑफर की जानकारी', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13)),
-                const SizedBox(height: 8),
                 TextField(
                   controller: itemNameCtrl,
                   decoration: const InputDecoration(labelText: 'सामान / स्टॉक का नाम (उदा: 5G मोबाइल / मीठा शरीफा)', border: OutlineInputBorder(), isDense: true),
